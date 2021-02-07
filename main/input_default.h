@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -65,15 +65,6 @@ class InputDefault : public Input {
 
 	int mouse_from_touch_index;
 
-	struct VibrationInfo {
-		float weak_magnitude;
-		float strong_magnitude;
-		float duration; // Duration in seconds
-		uint64_t timestamp;
-	};
-
-	Map<int, VibrationInfo> joy_vibration;
-
 	struct SpeedTrack {
 
 		uint64_t last_tick;
@@ -94,7 +85,6 @@ class InputDefault : public Input {
 		bool connected;
 		bool last_buttons[JOY_BUTTON_MAX + 19]; //apparently SDL specifies 35 possible buttons on android
 		float last_axis[JOY_AXIS_MAX];
-		float filter;
 		int last_hat;
 		int mapping;
 		int hat_current;
@@ -110,7 +100,6 @@ class InputDefault : public Input {
 			}
 			connected = false;
 			last_hat = HAT_MASK_CENTER;
-			filter = 0.01f;
 			mapping = -1;
 			hat_current = 0;
 		}
@@ -157,26 +146,61 @@ private:
 		TYPE_MAX,
 	};
 
+	enum JoyAxisRange {
+		NEGATIVE_HALF_AXIS = -1,
+		FULL_AXIS = 0,
+		POSITIVE_HALF_AXIS = 1
+	};
+
 	struct JoyEvent {
 		int type;
 		int index;
-		int value;
+		float value;
+	};
+
+	struct JoyBinding {
+		JoyType inputType;
+		union {
+			int button;
+
+			struct {
+				int axis;
+				JoyAxisRange range;
+				bool invert;
+			} axis;
+
+			struct {
+				int hat;
+				HatMask hat_mask;
+			} hat;
+
+		} input;
+
+		JoyType outputType;
+		union {
+			JoystickList button;
+
+			struct {
+				JoystickList axis;
+				JoyAxisRange range;
+			} axis;
+
+		} output;
 	};
 
 	struct JoyDeviceMapping {
-
 		String uid;
 		String name;
-		Map<int, JoyEvent> buttons;
-		Map<int, JoyEvent> axis;
-		JoyEvent hat[HAT_MAX];
+		Vector<JoyBinding> bindings;
 	};
-
-	JoyEvent hat_map_default[HAT_MAX];
 
 	Vector<JoyDeviceMapping> map_db;
 
-	JoyEvent _find_to_event(String p_to);
+	JoyEvent _get_mapped_button_event(const JoyDeviceMapping &mapping, int p_button);
+	JoyEvent _get_mapped_axis_event(const JoyDeviceMapping &mapping, int p_axis, float p_value);
+	void _get_mapped_hat_events(const JoyDeviceMapping &mapping, int p_hat, JoyEvent r_events[HAT_MAX]);
+	JoystickList _get_output_button(String output);
+	JoystickList _get_output_axis(String output);
 	void _button_event(int p_device, int p_index, bool p_pressed);
 	void _axis_event(int p_device, int p_axis, float p_value);
 	float _handle_deadzone(int p_device, int p_axis, float p_value);
@@ -185,6 +209,16 @@ private:
 
 	List<Ref<InputEvent> > accumulated_events;
 	bool use_accumulated_input;
+
+protected:
+	struct VibrationInfo {
+		float weak_magnitude;
+		float strong_magnitude;
+		float duration; // Duration in seconds
+		uint64_t timestamp;
+	};
+
+	Map<int, VibrationInfo> joy_vibration;
 
 public:
 	virtual bool is_key_pressed(int p_scancode) const;

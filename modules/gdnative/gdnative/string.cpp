@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -39,6 +39,10 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+static_assert(sizeof(godot_char_string) == sizeof(CharString), "CharString size mismatch");
+static_assert(sizeof(godot_string) == sizeof(String), "String size mismatch");
+static_assert(sizeof(godot_char_type) == sizeof(CharType), "CharType size mismatch");
 
 godot_int GDAPI godot_char_string_length(const godot_char_string *p_cs) {
 	const CharString *cs = (const CharString *)p_cs;
@@ -1100,7 +1104,7 @@ godot_string GDAPI godot_string_get_file(const godot_string *p_self) {
 	return result;
 }
 
-godot_string GDAPI godot_string_humanize_size(size_t p_size) {
+godot_string GDAPI godot_string_humanize_size(uint64_t p_size) {
 	godot_string result;
 	String return_value = String::humanize_size(p_size);
 	memnew_placement(&result, String(return_value));

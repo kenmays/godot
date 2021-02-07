@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -119,13 +119,15 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_plugin_GodotPlugin_nativeEmitS
 	String signal_name = jstring_to_string(j_signal_name, env);
 
 	int count = env->GetArrayLength(j_signal_params);
-	const Variant *args[count];
+	ERR_FAIL_COND_MSG(count > VARIANT_ARG_MAX, "Maximum argument count exceeded!");
+
+	Variant variant_params[VARIANT_ARG_MAX];
+	const Variant *args[VARIANT_ARG_MAX];
 
 	for (int i = 0; i < count; i++) {
-
 		jobject j_param = env->GetObjectArrayElement(j_signal_params, i);
-		Variant variant = _jobject_to_variant(env, j_param);
-		args[i] = &variant;
+		variant_params[i] = _jobject_to_variant(env, j_param);
+		args[i] = &variant_params[i];
 		env->DeleteLocalRef(j_param);
 	};
 

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -40,12 +40,24 @@ static Transform2D _canvas_get_transform(VisualServerViewport::Viewport *p_viewp
 	Transform2D xf = p_viewport->global_transform;
 
 	float scale = 1.0;
+
+	bool snap = Engine::get_singleton()->get_snap_2d_viewports();
+
 	if (p_viewport->canvas_map.has(p_canvas->parent)) {
-		xf = xf * p_viewport->canvas_map[p_canvas->parent].transform;
+
+		Transform2D c_xform = p_viewport->canvas_map[p_canvas->parent].transform;
+		if (snap) {
+			c_xform.elements[2] = c_xform.elements[2].floor();
+		}
+		xf = xf * c_xform;
 		scale = p_canvas->parent_scale;
 	}
 
-	xf = xf * p_canvas_data->transform;
+	Transform2D c_xform = p_canvas_data->transform;
+	if (snap) {
+		c_xform.elements[2] = c_xform.elements[2].floor();
+	}
+	xf = xf * c_xform;
 
 	if (scale != 1.0 && !VSG::canvas->disable_scale) {
 		Vector2 pivot = p_vp_size * 0.5;
@@ -229,15 +241,16 @@ void VisualServerViewport::_draw_viewport(Viewport *p_viewport, ARVRInterface::E
 			RasterizerCanvas::Light *canvas_lights = NULL;
 
 			RasterizerCanvas::Light *ptr = lights;
+			int canvas_layer_id = E->get()->layer;
 			while (ptr) {
-				if (E->get()->layer >= ptr->layer_min && E->get()->layer <= ptr->layer_max) {
+				if (canvas_layer_id >= ptr->layer_min && canvas_layer_id <= ptr->layer_max) {
 					ptr->next_ptr = canvas_lights;
 					canvas_lights = ptr;
 				}
 				ptr = ptr->filter_next_ptr;
 			}
 
-			VSG::canvas->render_canvas(canvas, xform, canvas_lights, lights_with_mask, clip_rect);
+			VSG::canvas->render_canvas(canvas, xform, canvas_lights, lights_with_mask, clip_rect, canvas_layer_id);
 			i++;
 
 			if (scenario_draw_canvas_bg && E->key().get_layer() >= scenario_canvas_max_layer) {
@@ -650,6 +663,22 @@ void VisualServerViewport::viewport_set_msaa(RID p_viewport, VS::ViewportMSAA p_
 	ERR_FAIL_COND(!viewport);
 
 	VSG::storage->render_target_set_msaa(viewport->render_target, p_msaa);
+}
+
+void VisualServerViewport::viewport_set_use_fxaa(RID p_viewport, bool p_fxaa) {
+
+	Viewport *viewport = viewport_owner.getornull(p_viewport);
+	ERR_FAIL_COND(!viewport);
+
+	VSG::storage->render_target_set_use_fxaa(viewport->render_target, p_fxaa);
+}
+
+void VisualServerViewport::viewport_set_use_debanding(RID p_viewport, bool p_debanding) {
+
+	Viewport *viewport = viewport_owner.getornull(p_viewport);
+	ERR_FAIL_COND(!viewport);
+
+	VSG::storage->render_target_set_use_debanding(viewport->render_target, p_debanding);
 }
 
 void VisualServerViewport::viewport_set_hdr(RID p_viewport, bool p_enabled) {

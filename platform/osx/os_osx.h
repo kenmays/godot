@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -65,6 +65,13 @@ public:
 		uint32_t unicode;
 	};
 
+	struct WarpEvent {
+		NSTimeInterval timestamp;
+		NSPoint delta;
+	};
+	List<WarpEvent> warp_events;
+	NSTimeInterval last_warp = 0;
+
 	Vector<KeyEvent> key_event_buffer;
 	int key_event_pos;
 
@@ -107,6 +114,7 @@ public:
 	NSOpenGLPixelFormat *pixelFormat;
 	NSOpenGLContext *context;
 
+	Vector<Vector2> mpath;
 	bool layered_window;
 
 	CursorShape cursor_shape;
@@ -120,6 +128,7 @@ public:
 	bool zoomed;
 	bool resizable;
 	bool window_focused;
+	bool on_top;
 
 	Size2 window_size;
 	Rect2 restore_rect;
@@ -137,16 +146,6 @@ public:
 	PowerOSX *power_manager;
 
 	CrashHandler crash_handler;
-
-	float _mouse_scale(float p_scale) {
-		if (_display_scale() > 1.0)
-			return p_scale;
-		else
-			return 1.0;
-	}
-
-	float _display_scale() const;
-	float _display_scale(id screen) const;
 
 	void _update_window();
 
@@ -170,6 +169,7 @@ public:
 	};
 
 	Map<String, Vector<GlobalMenuItem> > global_menus;
+	List<String> global_menus_order;
 
 	void _update_global_menu();
 
@@ -209,6 +209,7 @@ public:
 	virtual int get_mouse_button_state() const;
 	void update_real_mouse_position();
 	virtual void set_window_title(const String &p_title);
+	virtual void set_window_mouse_passthrough(const PoolVector2Array &p_region);
 
 	virtual Size2 get_window_size() const;
 	virtual Size2 get_real_window_size() const;
@@ -247,6 +248,11 @@ public:
 	virtual String get_executable_path() const;
 
 	virtual LatinKeyboardVariant get_latin_keyboard_variant() const;
+	virtual int keyboard_get_layout_count() const;
+	virtual int keyboard_get_current_layout() const;
+	virtual void keyboard_set_current_layout(int p_index);
+	virtual String keyboard_get_layout_language(int p_index) const;
+	virtual String keyboard_get_layout_name(int p_index) const;
 
 	virtual void move_window_to_foreground();
 
@@ -256,6 +262,8 @@ public:
 	virtual Point2 get_screen_position(int p_screen = -1) const;
 	virtual Size2 get_screen_size(int p_screen = -1) const;
 	virtual int get_screen_dpi(int p_screen = -1) const;
+	virtual float get_screen_scale(int p_screen = -1) const;
+	virtual float get_screen_max_scale() const;
 
 	virtual Point2 get_window_position() const;
 	virtual void set_window_position(const Point2 &p_position);

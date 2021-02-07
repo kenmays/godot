@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -41,6 +41,14 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+static_assert(sizeof(godot_pool_byte_array) == sizeof(PoolVector<uint8_t>), "PoolVector<uint8_t> size mismatch");
+static_assert(sizeof(godot_pool_int_array) == sizeof(PoolVector<godot_int>), "PoolVector<godot_int> size mismatch");
+static_assert(sizeof(godot_pool_real_array) == sizeof(PoolVector<godot_real>), "PoolVector<godot_real> size mismatch");
+static_assert(sizeof(godot_pool_string_array) == sizeof(PoolVector<String>), "PoolVector<String> size mismatch");
+static_assert(sizeof(godot_pool_vector2_array) == sizeof(PoolVector<Vector2>), "PoolVector<Vector2> size mismatch");
+static_assert(sizeof(godot_pool_vector3_array) == sizeof(PoolVector<Vector3>), "PoolVector<Vector3> size mismatch");
+static_assert(sizeof(godot_pool_color_array) == sizeof(PoolVector<Color>), "PoolVector<Color> size mismatch");
 
 #define memnew_placement_custom(m_placement, m_class, m_constr) _post_initialize(new (m_placement, sizeof(m_class), "") m_constr)
 

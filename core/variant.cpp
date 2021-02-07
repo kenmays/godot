@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -791,7 +791,7 @@ bool Variant::is_zero() const {
 		} break;
 		case OBJECT: {
 
-			return _OBJ_PTR(*this) == NULL;
+			return _UNSAFE_OBJ_PROXY_PTR(*this) == NULL;
 		} break;
 		case NODE_PATH: {
 
@@ -1121,9 +1121,9 @@ void Variant::clear() {
 		case OBJECT: {
 
 #ifdef DEBUG_ENABLED
-			if (_get_obj().rc) {
-				if (_get_obj().rc->decrement()) {
-					memfree(_get_obj().rc);
+			if (likely(_get_obj().rc)) {
+				if (unlikely(_get_obj().rc->decrement())) {
+					memdelete(_get_obj().rc);
 				}
 			} else {
 				_get_obj().ref.unref();
@@ -1598,6 +1598,10 @@ String Variant::stringify(List<const void *> &stack) const {
 
 			Object *obj = _OBJ_PTR(*this);
 			if (obj) {
+				if (_get_obj().ref.is_null() && !ObjectDB::get_instance(obj->get_instance_id())) {
+					return "[Deleted Object]";
+				}
+
 				return obj->to_string();
 			} else {
 #ifdef DEBUG_ENABLED
@@ -1762,11 +1766,12 @@ Variant::operator RID() const {
 			return _get_obj().ref.get_rid();
 		} else {
 #ifdef DEBUG_ENABLED
-			Object *obj = _get_obj().rc->get_ptr();
+			Object *obj = likely(_get_obj().rc) ? _get_obj().rc->get_ptr() : NULL;
 			if (unlikely(!obj)) {
 				if (ScriptDebugger::get_singleton() && _get_obj().rc && !ObjectDB::get_instance(_get_obj().rc->instance_id)) {
 					WARN_PRINT("Attempted get RID on a deleted object.");
 				}
+				return RID();
 			}
 #else
 			Object *obj = _get_obj().obj;
@@ -2333,12 +2338,20 @@ Variant::Variant(const RID &p_rid) {
 Variant::Variant(const Object *p_object) {
 
 	type = OBJECT;
+	Object *obj = const_cast<Object *>(p_object);
 
 	memnew_placement(_data._mem, ObjData);
+	Reference *ref = Object::cast_to<Reference>(obj);
+	if (unlikely(ref)) {
+		*reinterpret_cast<Ref<Reference> *>(_get_obj().ref.get_data()) = Ref<Reference>(ref);
 #ifdef DEBUG_ENABLED
-	_get_obj().rc = p_object ? const_cast<Object *>(p_object)->_use_rc() : NULL;
-#else
-	_get_obj().obj = const_cast<Object *>(p_object);
+		_get_obj().rc = NULL;
+	} else {
+		_get_obj().rc = likely(obj) ? obj->_use_rc() : NULL;
+#endif
+	}
+#if !defined(DEBUG_ENABLED)
+	_get_obj().obj = obj;
 #endif
 }
 
@@ -2650,9 +2663,16 @@ void Variant::operator=(const Variant &p_variant) {
 		} break;
 		case OBJECT: {
 
+#ifdef DEBUG_ENABLED
+			if (likely(_get_obj().rc)) {
+				if (unlikely(_get_obj().rc->decrement())) {
+					memdelete(_get_obj().rc);
+				}
+			}
+#endif
 			*reinterpret_cast<ObjData *>(_data._mem) = p_variant._get_obj();
 #ifdef DEBUG_ENABLED
-			if (_get_obj().rc) {
+			if (likely(_get_obj().rc)) {
 				_get_obj().rc->increment();
 			}
 #endif
@@ -2853,7 +2873,7 @@ uint32_t Variant::hash() const {
 		} break;
 		case OBJECT: {
 
-			return hash_djb2_one_64(make_uint64_t(_OBJ_PTR(*this)));
+			return hash_djb2_one_64(make_uint64_t(_UNSAFE_OBJ_PROXY_PTR(*this)));
 		} break;
 		case NODE_PATH: {
 

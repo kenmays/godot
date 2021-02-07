@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -172,6 +172,10 @@ void VisualServerRaster::set_boot_image(const Ref<Image> &p_image, const Color &
 }
 void VisualServerRaster::set_default_clear_color(const Color &p_color) {
 	VSG::viewport->set_default_clear_color(p_color);
+}
+
+void VisualServerRaster::set_shader_time_scale(float p_scale) {
+	VSG::rasterizer->set_shader_time_scale(p_scale);
 }
 
 bool VisualServerRaster::has_feature(Features p_feature) const {

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -318,17 +318,16 @@ bool EditorPropertyRevert::may_node_be_in_instance(Node *p_node) {
 	Node *node = p_node;
 
 	while (node) {
-
-		if (node->get_scene_instance_state().is_valid()) {
-			might_be = true;
-			break;
-		}
 		if (node == edited_scene) {
 			if (node->get_scene_inherited_state().is_valid()) {
 				might_be = true;
 				break;
 			}
 			might_be = false;
+			break;
+		}
+		if (node->get_scene_instance_state().is_valid()) {
+			might_be = true;
 			break;
 		}
 		node = node->get_owner();
@@ -379,9 +378,9 @@ bool EditorPropertyRevert::get_instanced_node_original_property(Node *p_node, co
 		node = node->get_owner();
 	}
 
-	if (!found && node) {
+	if (!found && p_node) {
 		//if not found, try default class value
-		Variant attempt = ClassDB::class_get_default_property_value(node->get_class_name(), p_prop);
+		Variant attempt = ClassDB::class_get_default_property_value(p_node->get_class_name(), p_prop);
 		if (attempt.get_type() != Variant::NIL) {
 			found = true;
 			value = attempt;
@@ -464,18 +463,20 @@ bool EditorPropertyRevert::can_property_revert(Object *p_object, const StringNam
 		}
 	}
 
-	if (p_object->call("property_can_revert", p_property).operator bool()) {
-
-		has_revert = true;
-	}
-
-	if (!has_revert && !p_object->get_script().is_null()) {
-		Ref<Script> scr = p_object->get_script();
-		if (scr.is_valid()) {
-			Variant orig_value;
-			if (scr->get_property_default_value(p_property, orig_value)) {
-				if (orig_value != p_object->get(p_property)) {
-					has_revert = true;
+	// If the object implements property_can_revert, rely on that completely
+	// (i.e. don't then try to revert to default value - the property_get_revert implementation
+	// can do that if so desired)
+	if (p_object->has_method("property_can_revert")) {
+		has_revert = p_object->call("property_can_revert", p_property).operator bool();
+	} else {
+		if (!has_revert && !p_object->get_script().is_null()) {
+			Ref<Script> scr = p_object->get_script();
+			if (scr.is_valid()) {
+				Variant orig_value;
+				if (scr->get_property_default_value(p_property, orig_value)) {
+					if (orig_value != p_object->get(p_property)) {
+						has_revert = true;
+					}
 				}
 			}
 		}

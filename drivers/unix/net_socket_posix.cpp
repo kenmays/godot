@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -350,11 +350,11 @@ Error NetSocketPosix::open(Type p_sock_type, IP::Type &ip_type) {
 		// recv/recvfrom and an ICMP reply was received from a previous send/sendto.
 		unsigned long disable = 0;
 		if (ioctlsocket(_sock, SIO_UDP_CONNRESET, &disable) == SOCKET_ERROR) {
-			print_verbose("Unable to turn off UDP WSAECONNRESET behaviour on Windows");
+			print_verbose("Unable to turn off UDP WSAECONNRESET behavior on Windows");
 		}
 		if (ioctlsocket(_sock, SIO_UDP_NETRESET, &disable) == SOCKET_ERROR) {
 			// This feature seems not to be supported on wine.
-			print_verbose("Unable to turn off UDP WSAENETRESET behaviour on Windows");
+			print_verbose("Unable to turn off UDP WSAENETRESET behavior on Windows");
 		}
 	}
 #endif
@@ -544,14 +544,14 @@ Error NetSocketPosix::recv(uint8_t *p_buffer, int p_len, int &r_read) {
 	return OK;
 }
 
-Error NetSocketPosix::recvfrom(uint8_t *p_buffer, int p_len, int &r_read, IP_Address &r_ip, uint16_t &r_port) {
+Error NetSocketPosix::recvfrom(uint8_t *p_buffer, int p_len, int &r_read, IP_Address &r_ip, uint16_t &r_port, bool p_peek) {
 	ERR_FAIL_COND_V(!is_open(), ERR_UNCONFIGURED);
 
 	struct sockaddr_storage from;
 	socklen_t len = sizeof(struct sockaddr_storage);
 	memset(&from, 0, len);
 
-	r_read = ::recvfrom(_sock, SOCK_BUF(p_buffer), p_len, 0, (struct sockaddr *)&from, &len);
+	r_read = ::recvfrom(_sock, SOCK_BUF(p_buffer), p_len, p_peek ? MSG_PEEK : 0, (struct sockaddr *)&from, &len);
 
 	if (r_read < 0) {
 		NetError err = _get_socket_error();

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -46,12 +46,14 @@ class Mutex;
 class OS {
 
 	static OS *singleton;
+	static uint64_t target_ticks;
 	String _execpath;
 	List<String> _cmdline;
 	bool _keep_screen_on;
 	bool low_processor_usage_mode;
 	int low_processor_usage_mode_sleep_usec;
 	bool _verbose_stdout;
+	bool _debug_stdout;
 	String _local_clipboard;
 	uint64_t _msec_splash;
 	bool _no_window;
@@ -138,7 +140,6 @@ protected:
 
 	virtual void set_cmdline(const char *p_execpath, const List<String> &p_args);
 
-	void _ensure_user_data_dir();
 	virtual bool _check_internal_feature_support(const String &p_feature) = 0;
 
 public:
@@ -172,6 +173,7 @@ public:
 	virtual Point2 get_mouse_position() const = 0;
 	virtual int get_mouse_button_state() const = 0;
 	virtual void set_window_title(const String &p_title) = 0;
+	virtual void set_window_mouse_passthrough(const PoolVector2Array &p_region){};
 
 	virtual void set_clipboard(const String &p_text);
 	virtual String get_clipboard() const;
@@ -193,6 +195,11 @@ public:
 	virtual int get_audio_driver_count() const;
 	virtual const char *get_audio_driver_name(int p_driver) const;
 
+	virtual int get_tablet_driver_count() const { return 0; };
+	virtual String get_tablet_driver_name(int p_driver) const { return ""; };
+	virtual String get_current_tablet_driver() const { return ""; };
+	virtual void set_current_tablet_driver(const String &p_driver){};
+
 	virtual PoolStringArray get_connected_midi_inputs();
 	virtual void open_midi_inputs();
 	virtual void close_midi_inputs();
@@ -203,6 +210,8 @@ public:
 	virtual Point2 get_screen_position(int p_screen = -1) const { return Point2(); }
 	virtual Size2 get_screen_size(int p_screen = -1) const { return get_window_size(); }
 	virtual int get_screen_dpi(int p_screen = -1) const { return 72; }
+	virtual float get_screen_scale(int p_screen = -1) const { return 1.0; }
+	virtual float get_screen_max_scale() const { return 1.0; };
 	virtual Point2 get_window_position() const { return Vector2(); }
 	virtual void set_window_position(const Point2 &p_position) {}
 	virtual Size2 get_max_window_size() const { return Size2(); };
@@ -228,6 +237,22 @@ public:
 	virtual void request_attention() {}
 	virtual void center_window();
 
+	// Returns internal pointers and handles.
+	// While exposed to GDScript this is mostly to give GDNative plugins access to this information.
+	// Note that whether a valid handle is returned depends on whether it applies to the given
+	// platform and often to the chosen render driver.
+	// NULL will be returned if a handle is not available.
+
+	enum HandleType {
+		APPLICATION_HANDLE, // HINSTANCE, NSApplication*, UIApplication*, JNIEnv* ...
+		DISPLAY_HANDLE, // X11::Display* ...
+		WINDOW_HANDLE, // HWND, X11::Window*, NSWindow*, UIWindow*, Android activity ...
+		WINDOW_VIEW, // HDC, NSView*, UIView*, Android surface ...
+		OPENGL_CONTEXT, // HGLRC, X11::GLXContext, NSOpenGLContext*, EGLContext* ...
+	};
+
+	virtual void *get_native_handle(int p_handle_type) { return NULL; };
+
 	// Returns window area free of hardware controls and other obstacles.
 	// The application should use this to determine where to place UI elements.
 	//
@@ -245,10 +270,6 @@ public:
 
 	virtual bool get_window_per_pixel_transparency_enabled() const { return false; }
 	virtual void set_window_per_pixel_transparency_enabled(bool p_enabled) {}
-
-	virtual uint8_t *get_layered_buffer_data() { return NULL; }
-	virtual Size2 get_layered_buffer_size() { return Size2(0, 0); }
-	virtual void swap_layered_buffer() {}
 
 	virtual void set_ime_active(const bool p_active) {}
 	virtual void set_ime_position(const Point2 &p_pos) {}
@@ -282,6 +303,8 @@ public:
 	virtual String get_name() const = 0;
 	virtual List<String> get_cmdline_args() const { return _cmdline; }
 	virtual String get_model_name() const;
+
+	void ensure_user_data_dir();
 
 	virtual MainLoop *get_main_loop() const = 0;
 
@@ -344,6 +367,8 @@ public:
 	virtual uint64_t get_system_time_msecs() const;
 
 	virtual void delay_usec(uint32_t p_usec) const = 0;
+	virtual void add_frame_delay(bool p_can_draw);
+
 	virtual uint64_t get_ticks_usec() const = 0;
 	uint32_t get_ticks_msec() const;
 	uint64_t get_splash_tick_msec() const;
@@ -353,6 +378,7 @@ public:
 	virtual bool is_userfs_persistent() const { return true; }
 
 	bool is_stdout_verbose() const;
+	bool is_stdout_debug_enabled() const;
 
 	virtual void disable_crash_handler() {}
 	virtual bool is_disable_crash_handler() const { return false; }
@@ -380,7 +406,7 @@ public:
 	};
 
 	virtual bool has_virtual_keyboard() const;
-	virtual void show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect = Rect2(), int p_max_input_length = -1);
+	virtual void show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect = Rect2(), bool p_multiline = false, int p_max_input_length = -1, int p_cursor_start = -1, int p_cursor_end = -1);
 	virtual void hide_virtual_keyboard();
 
 	// returns height of the currently shown virtual keyboard (0 if keyboard is hidden)
@@ -448,7 +474,7 @@ public:
 	};
 
 	virtual void set_screen_orientation(ScreenOrientation p_orientation);
-	ScreenOrientation get_screen_orientation() const;
+	virtual ScreenOrientation get_screen_orientation() const;
 
 	virtual void enable_for_stealing_focus(ProcessID pid) {}
 	virtual void move_window_to_foreground() {}
@@ -491,6 +517,12 @@ public:
 	};
 
 	virtual LatinKeyboardVariant get_latin_keyboard_variant() const;
+
+	virtual int keyboard_get_layout_count() const;
+	virtual int keyboard_get_current_layout() const;
+	virtual void keyboard_set_current_layout(int p_index);
+	virtual String keyboard_get_layout_language(int p_index) const;
+	virtual String keyboard_get_layout_name(int p_index) const;
 
 	virtual bool is_joy_known(int p_device);
 	virtual String get_joy_guid(int p_device) const;

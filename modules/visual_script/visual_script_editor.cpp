@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -251,6 +251,19 @@ protected:
 			undo_redo->create_action(TTR("Set Variable Type"));
 			undo_redo->add_do_method(script.ptr(), "set_variable_info", var, dc);
 			undo_redo->add_undo_method(script.ptr(), "set_variable_info", var, d);
+
+			// Setting the default value.
+			Variant::Type type = (Variant::Type)(int)p_value;
+			if (type != Variant::NIL) {
+				Variant default_value;
+				Variant::CallError ce;
+				default_value = Variant::construct(type, NULL, 0, ce);
+				if (ce.error == Variant::CallError::CALL_OK) {
+					undo_redo->add_do_method(script.ptr(), "set_variable_default_value", var, default_value);
+					undo_redo->add_undo_method(script.ptr(), "set_variable_default_value", var, dc["value"]);
+				}
+			}
+
 			undo_redo->add_do_method(this, "_var_changed");
 			undo_redo->add_undo_method(this, "_var_changed");
 			undo_redo->commit_action();
@@ -862,6 +875,10 @@ void VisualScriptEditor::_update_graph(int p_only_id) {
 		}
 	}
 	_update_graph_connections();
+
+	float graph_minimap_opacity = EditorSettings::get_singleton()->get("editors/visual_editors/minimap_opacity");
+	graph->set_minimap_opacity(graph_minimap_opacity);
+
 	// use default_func instead of default_func for now I think that should be good stop gap solution to ensure not breaking anything
 	graph->call_deferred("set_scroll_ofs", script->get_function_scroll(default_func) * EDSCALE);
 	updating_graph = false;
@@ -991,8 +1008,8 @@ void VisualScriptEditor::_update_members() {
 		TreeItem *ti = members->create_item(variables);
 
 		ti->set_text(0, E->get());
-		Variant var = script->get_variable_default_value(E->get());
-		ti->set_suffix(0, "= " + String(var));
+
+		ti->set_suffix(0, "= " + _sanitized_variant_text(E->get()));
 		ti->set_icon(0, type_icons[script->get_variable_info(E->get()).type]);
 
 		ti->set_selectable(0, true);
@@ -1030,6 +1047,18 @@ void VisualScriptEditor::_update_members() {
 	base_type_select->set_icon(Control::get_icon(icon_type, "EditorIcons"));
 
 	updating_members = false;
+}
+
+String VisualScriptEditor::_sanitized_variant_text(const StringName &property_name) {
+	Variant var = script->get_variable_default_value(property_name);
+
+	if (script->get_variable_info(property_name).type != Variant::NIL) {
+		Variant::CallError ce;
+		const Variant *converted = &var;
+		var = Variant::construct(script->get_variable_info(property_name).type, &converted, 1, ce, false);
+	}
+
+	return String(var);
 }
 
 void VisualScriptEditor::_member_selected() {
@@ -2401,7 +2430,8 @@ RES VisualScriptEditor::get_edited_resource() const {
 }
 
 void VisualScriptEditor::set_edited_resource(const RES &p_res) {
-
+	ERR_FAIL_COND(script.is_valid());
+	ERR_FAIL_COND(p_res.is_null());
 	script = p_res;
 	signal_editor->script = script;
 	signal_editor->undo_redo = undo_redo;
@@ -2419,7 +2449,10 @@ void VisualScriptEditor::set_edited_resource(const RES &p_res) {
 	}
 
 	_update_graph();
-	_update_members();
+	call_deferred("_update_members");
+}
+
+void VisualScriptEditor::enable_editor() {
 }
 
 Vector<String> VisualScriptEditor::get_functions() {
@@ -3126,6 +3159,7 @@ void VisualScriptEditor::_move_nodes_with_rescan(const StringName &p_func_from, 
 	{
 		List<VisualScript::DataConnection> data_connections;
 		script->get_data_connection_list(p_func_from, &data_connections);
+		int func_from_node_id = script->get_function_node_id(p_func_from);
 
 		HashMap<int, Map<int, Pair<int, int> > > connections;
 
@@ -3134,6 +3168,11 @@ void VisualScriptEditor::_move_nodes_with_rescan(const StringName &p_func_from, 
 			int to = E->get().to_node;
 			int out_p = E->get().from_port;
 			int in_p = E->get().to_port;
+
+			// skip if the from_node is a function node
+			if (from == func_from_node_id) {
+				continue;
+			}
 
 			if (!connections.has(to))
 				connections.set(to, Map<int, Pair<int, int> >());
@@ -4750,6 +4789,8 @@ VisualScriptEditor::VisualScriptEditor() {
 	graph->connect("duplicate_nodes_request", this, "_on_nodes_duplicate");
 	graph->connect("gui_input", this, "_graph_gui_input");
 	graph->set_drag_forwarding(this);
+	float graph_minimap_opacity = EditorSettings::get_singleton()->get("editors/visual_editors/minimap_opacity");
+	graph->set_minimap_opacity(graph_minimap_opacity);
 	graph->hide();
 	graph->connect("scroll_offset_changed", this, "_graph_ofs_changed");
 

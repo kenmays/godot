@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -426,7 +426,9 @@ void FileDialog::update_file_list() {
 
 	TreeItem *root = tree->create_item();
 	Ref<Texture> folder = get_icon("folder");
+	Ref<Texture> file_icon = get_icon("file");
 	const Color folder_color = get_color("folder_icon_modulate");
+	const Color file_color = get_color("file_icon_modulate");
 	List<String> files;
 	List<String> dirs;
 
@@ -521,7 +523,10 @@ void FileDialog::update_file_list() {
 
 				Ref<Texture> icon = get_icon_func(base_dir.plus_file(files.front()->get()));
 				ti->set_icon(0, icon);
+			} else {
+				ti->set_icon(0, file_icon);
 			}
+			ti->set_icon_modulate(0, file_color);
 
 			if (mode == MODE_OPEN_DIR) {
 				ti->set_custom_color(0, get_color("files_disabled"));

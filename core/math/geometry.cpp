@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,8 +31,11 @@
 #include "geometry.h"
 
 #include "core/print_string.h"
+
 #include "thirdparty/misc/clipper.hpp"
 #include "thirdparty/misc/triangulator.h"
+#define STB_RECT_PACK_IMPLEMENTATION
+#include "thirdparty/stb_rect_pack/stb_rect_pack.h"
 
 #define SCALE_FACTOR 100000.0 // Based on CMP_EPSILON.
 
@@ -1184,4 +1187,76 @@ Vector<Vector<Point2> > Geometry::_polypath_offset(const Vector<Point2> &p_polyp
 		polypaths.push_back(polypath);
 	}
 	return polypaths;
+}
+
+Vector<Vector3> Geometry::compute_convex_mesh_points(const Plane *p_planes, int p_plane_count) {
+
+	Vector<Vector3> points;
+
+	// Iterate through every unique combination of any three planes.
+	for (int i = p_plane_count - 1; i >= 0; i--) {
+		for (int j = i - 1; j >= 0; j--) {
+			for (int k = j - 1; k >= 0; k--) {
+
+				// Find the point where these planes all cross over (if they
+				// do at all).
+				Vector3 convex_shape_point;
+				if (p_planes[i].intersect_3(p_planes[j], p_planes[k], &convex_shape_point)) {
+
+					// See if any *other* plane excludes this point because it's
+					// on the wrong side.
+					bool excluded = false;
+					for (int n = 0; n < p_plane_count; n++) {
+						if (n != i && n != j && n != k) {
+							real_t dp = p_planes[n].normal.dot(convex_shape_point);
+							if (dp - p_planes[n].d > CMP_EPSILON) {
+								excluded = true;
+								break;
+							}
+						}
+					}
+
+					// Only add the point if it passed all tests.
+					if (!excluded) {
+						points.push_back(convex_shape_point);
+					}
+				}
+			}
+		}
+	}
+
+	return points;
+}
+
+Vector<Geometry::PackRectsResult> Geometry::partial_pack_rects(const Vector<Vector2i> &p_sizes, const Size2i &p_atlas_size) {
+
+	Vector<stbrp_node> nodes;
+	nodes.resize(p_atlas_size.width);
+	zeromem(nodes.ptrw(), sizeof(stbrp_node) * nodes.size());
+
+	stbrp_context context;
+	stbrp_init_target(&context, p_atlas_size.width, p_atlas_size.height, nodes.ptrw(), p_atlas_size.width);
+
+	Vector<stbrp_rect> rects;
+	rects.resize(p_sizes.size());
+
+	for (int i = 0; i < p_sizes.size(); i++) {
+		rects.write[i].id = i;
+		rects.write[i].w = p_sizes[i].width;
+		rects.write[i].h = p_sizes[i].height;
+		rects.write[i].x = 0;
+		rects.write[i].y = 0;
+		rects.write[i].was_packed = 0;
+	}
+
+	stbrp_pack_rects(&context, rects.ptrw(), rects.size());
+
+	Vector<PackRectsResult> ret;
+	ret.resize(p_sizes.size());
+
+	for (int i = 0; i < p_sizes.size(); i++) {
+		ret.write[rects[i].id] = { rects[i].x, rects[i].y, static_cast<bool>(rects[i].was_packed) };
+	}
+
+	return ret;
 }

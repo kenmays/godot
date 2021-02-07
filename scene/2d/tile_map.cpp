@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -936,13 +936,10 @@ void TileMap::update_bitmask_area(const Vector2 &p_pos) {
 void TileMap::update_bitmask_region(const Vector2 &p_start, const Vector2 &p_end) {
 
 	if ((p_end.x < p_start.x || p_end.y < p_start.y) || (p_end.x == p_start.x && p_end.y == p_start.y)) {
-		int i;
 		Array a = get_used_cells();
-		for (i = 0; i < a.size(); i++) {
-			// update_bitmask_area() in order to update cells adjacent to the
-			// current cell, since ordering in array may not be reliable
+		for (int i = 0; i < a.size(); i++) {
 			Vector2 vector = (Vector2)a[i];
-			update_bitmask_area(Vector2(vector.x, vector.y));
+			update_cell_bitmask(vector.x, vector.y);
 		}
 		return;
 	}
@@ -1052,8 +1049,9 @@ void TileMap::update_dirty_bitmask() {
 void TileMap::fix_invalid_tiles() {
 
 	ERR_FAIL_COND_MSG(tile_set.is_null(), "Cannot fix invalid tiles if Tileset is not open.");
-	for (Map<PosKey, Cell>::Element *E = tile_map.front(); E; E = E->next()) {
 
+	Map<PosKey, Cell> temp_tile_map = tile_map;
+	for (Map<PosKey, Cell>::Element *E = temp_tile_map.front(); E; E = E->next()) {
 		if (!tile_set->has_tile(get_cell(E->key().x, E->key().y))) {
 			set_cell(E->key().x, E->key().y, INVALID_CELL);
 		}

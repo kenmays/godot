@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,9 +31,13 @@
 #include "editor_spin_slider.h"
 #include "core/math/expression.h"
 #include "core/os/input.h"
+#include "editor_node.h"
 #include "editor_scale.h"
 
 String EditorSpinSlider::get_tooltip(const Point2 &p_pos) const {
+	if (grabber->is_visible()) {
+		return rtos(get_value()) + "\n\n" + TTR("Hold Ctrl to round to integers. Hold Shift for more precise changes.");
+	}
 	return rtos(get_value());
 }
 
@@ -109,7 +113,21 @@ void EditorSpinSlider::_gui_input(const Ref<InputEvent> &p_event) {
 			}
 
 			if (grabbing_spinner) {
+				// Don't make the user scroll all the way back to 'in range' if they went off the end.
+				if (pre_grab_value < get_min() && !is_lesser_allowed()) {
+					pre_grab_value = get_min();
+				}
+				if (pre_grab_value > get_max() && !is_greater_allowed()) {
+					pre_grab_value = get_max();
+				}
+
 				if (mm->get_control()) {
+					// If control was just pressed, don't make the value do a huge jump in magnitude.
+					if (grabbing_spinner_dist_cache != 0) {
+						pre_grab_value += grabbing_spinner_dist_cache * get_step();
+						grabbing_spinner_dist_cache = 0;
+					}
+
 					set_value(Math::round(pre_grab_value + get_step() * grabbing_spinner_dist_cache * 10));
 				} else {
 					set_value(pre_grab_value + get_step() * grabbing_spinner_dist_cache);
@@ -179,10 +197,24 @@ void EditorSpinSlider::_notification(int p_what) {
 			p_what == MainLoop::NOTIFICATION_WM_FOCUS_IN ||
 			p_what == NOTIFICATION_EXIT_TREE) {
 		if (grabbing_spinner) {
+			grabber->hide();
 			Input::get_singleton()->set_mouse_mode(Input::MOUSE_MODE_VISIBLE);
 			grabbing_spinner = false;
 			grabbing_spinner_attempt = false;
 		}
+	}
+
+	if (p_what == NOTIFICATION_READY) {
+		// Add a left margin to the stylebox to make the number align with the Label
+		// when it's edited. The LineEdit "focus" stylebox uses the "normal" stylebox's
+		// default margins.
+		Ref<StyleBoxFlat> stylebox =
+				EditorNode::get_singleton()->get_theme_base()->get_stylebox("normal", "LineEdit")->duplicate();
+		// EditorSpinSliders with a label have more space on the left, so add an
+		// higher margin to match the location where the text begins.
+		// The margin values below were determined by empirical testing.
+		stylebox->set_default_margin(MARGIN_LEFT, (get_label() != String() ? 23 : 16) * EDSCALE);
+		value_input->add_style_override("normal", stylebox);
 	}
 
 	if (p_what == NOTIFICATION_DRAW) {
@@ -344,7 +376,12 @@ String EditorSpinSlider::get_label() const {
 }
 
 void EditorSpinSlider::_evaluate_input_text() {
-	String text = value_input->get_text();
+	// Replace comma with dot to support it as decimal separator (GH-6028).
+	// This prevents using functions like `pow()`, but using functions
+	// in EditorSpinSlider is a barely known (and barely used) feature.
+	// Instead, we'd rather support German/French keyboard layouts out of the box.
+	const String text = value_input->get_text().replace(",", ".");
+
 	Ref<Expression> expr;
 	expr.instance();
 	Error err = expr->parse(text);

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,6 +31,7 @@
 #ifndef NETWORKED_MULTIPLAYER_ENET_H
 #define NETWORKED_MULTIPLAYER_ENET_H
 
+#include "core/crypto/crypto.h"
 #include "core/io/compression.h"
 #include "core/io/networked_multiplayer_peer.h"
 
@@ -111,6 +112,11 @@ private:
 
 	IP_Address bind_ip;
 
+	bool dtls_enabled;
+	Ref<CryptoKey> dtls_key;
+	Ref<X509Certificate> dtls_cert;
+	bool dtls_verify;
+
 protected:
 	static void _bind_methods();
 
@@ -166,6 +172,12 @@ public:
 	~NetworkedMultiplayerENet();
 
 	void set_bind_ip(const IP_Address &p_ip);
+	void set_dtls_enabled(bool p_enabled);
+	bool is_dtls_enabled() const;
+	void set_dtls_verify_enabled(bool p_enabled);
+	bool is_dtls_verify_enabled() const;
+	void set_dtls_key(Ref<CryptoKey> p_key);
+	void set_dtls_certificate(Ref<X509Certificate> p_cert);
 };
 
 VARIANT_ENUM_CAST(NetworkedMultiplayerENet::CompressionMode);

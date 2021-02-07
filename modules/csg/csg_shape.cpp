@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -136,18 +136,13 @@ void CSGShape::_make_dirty() {
 	if (!is_inside_tree())
 		return;
 
-	if (dirty) {
-		return;
+	if (parent) {
+		parent->_make_dirty();
+	} else if (!dirty) {
+		call_deferred("_update_shape");
 	}
 
 	dirty = true;
-
-	if (parent) {
-		parent->_make_dirty();
-	} else {
-		//only parent will do
-		call_deferred("_update_shape");
-	}
 }
 
 CSGBrush *CSGShape::_get_brush() {
@@ -296,20 +291,18 @@ void CSGShape::_update_shape() {
 		int mat = n->faces[i].material;
 		ERR_CONTINUE(mat < -1 || mat >= face_count.size());
 		int idx = mat == -1 ? face_count.size() - 1 : mat;
-		if (n->faces[i].smooth) {
 
-			Plane p(n->faces[i].vertices[0], n->faces[i].vertices[1], n->faces[i].vertices[2]);
+		Plane p(n->faces[i].vertices[0], n->faces[i].vertices[1], n->faces[i].vertices[2]);
 
-			for (int j = 0; j < 3; j++) {
-				Vector3 v = n->faces[i].vertices[j];
-				Vector3 add;
-				if (vec_map.lookup(v, add)) {
-					add += p.normal;
-				} else {
-					add = p.normal;
-				}
-				vec_map.set(v, add);
+		for (int j = 0; j < 3; j++) {
+			Vector3 v = n->faces[i].vertices[j];
+			Vector3 add;
+			if (vec_map.lookup(v, add)) {
+				add += p.normal;
+			} else {
+				add = p.normal;
 			}
+			vec_map.set(v, add);
 		}
 
 		face_count.write[idx]++;
@@ -342,20 +335,12 @@ void CSGShape::_update_shape() {
 		}
 	}
 
-	//fill arrays
-	PoolVector<Vector3> physics_faces;
-	bool fill_physics_faces = false;
+	// Update collision faces.
 	if (root_collision_shape.is_valid()) {
+
+		PoolVector<Vector3> physics_faces;
 		physics_faces.resize(n->faces.size() * 3);
-		fill_physics_faces = true;
-	}
-
-	{
-		PoolVector<Vector3>::Write physicsw;
-
-		if (fill_physics_faces) {
-			physicsw = physics_faces.write();
-		}
+		PoolVector<Vector3>::Write physicsw = physics_faces.write();
 
 		for (int i = 0; i < n->faces.size(); i++) {
 
@@ -365,10 +350,22 @@ void CSGShape::_update_shape() {
 				SWAP(order[1], order[2]);
 			}
 
-			if (fill_physics_faces) {
-				physicsw[i * 3 + 0] = n->faces[i].vertices[order[0]];
-				physicsw[i * 3 + 1] = n->faces[i].vertices[order[1]];
-				physicsw[i * 3 + 2] = n->faces[i].vertices[order[2]];
+			physicsw[i * 3 + 0] = n->faces[i].vertices[order[0]];
+			physicsw[i * 3 + 1] = n->faces[i].vertices[order[1]];
+			physicsw[i * 3 + 2] = n->faces[i].vertices[order[2]];
+		}
+
+		root_collision_shape->set_faces(physics_faces);
+	}
+
+	//fill arrays
+	{
+		for (int i = 0; i < n->faces.size(); i++) {
+
+			int order[3] = { 0, 1, 2 };
+
+			if (n->faces[i].invert) {
+				SWAP(order[1], order[2]);
 			}
 
 			int mat = n->faces[i].material;
@@ -460,10 +457,6 @@ void CSGShape::_update_shape() {
 		root_mesh->surface_set_material(idx, surfaces[i].material);
 	}
 
-	if (root_collision_shape.is_valid()) {
-		root_collision_shape->set_faces(physics_faces);
-	}
-
 	set_base(root_mesh->get_rid());
 }
 AABB CSGShape::get_aabb() const {
@@ -522,6 +515,12 @@ void CSGShape::_notification(int p_what) {
 		}
 
 		_make_dirty();
+	}
+
+	if (p_what == NOTIFICATION_TRANSFORM_CHANGED) {
+		if (use_collision && is_root_shape() && root_collision_instance.is_valid()) {
+			PhysicsServer::get_singleton()->body_set_state(root_collision_instance, PhysicsServer::BODY_STATE_TRANSFORM, get_global_transform());
+		}
 	}
 
 	if (p_what == NOTIFICATION_LOCAL_TRANSFORM_CHANGED) {
@@ -662,8 +661,7 @@ CSGShape::~CSGShape() {
 //////////////////////////////////
 
 CSGBrush *CSGCombiner::_build_brush() {
-
-	return NULL; //does not build anything
+	return memnew(CSGBrush); //does not build anything
 }
 
 CSGCombiner::CSGCombiner() {
@@ -717,9 +715,9 @@ CSGPrimitive::CSGPrimitive() {
 /////////////////////
 
 CSGBrush *CSGMesh::_build_brush() {
-
-	if (!mesh.is_valid())
-		return NULL;
+	if (!mesh.is_valid()) {
+		return memnew(CSGBrush);
+	}
 
 	PoolVector<Vector3> vertices;
 	PoolVector<bool> smooth;
@@ -737,7 +735,7 @@ CSGBrush *CSGMesh::_build_brush() {
 
 		if (arrays.size() == 0) {
 			_make_dirty();
-			ERR_FAIL_COND_V(arrays.size() == 0, NULL);
+			ERR_FAIL_COND_V(arrays.size() == 0, memnew(CSGBrush));
 		}
 
 		PoolVector<Vector3> avertices = arrays[Mesh::ARRAY_VERTEX];
@@ -862,8 +860,9 @@ CSGBrush *CSGMesh::_build_brush() {
 		}
 	}
 
-	if (vertices.size() == 0)
-		return NULL;
+	if (vertices.size() == 0) {
+		return memnew(CSGBrush);
+	}
 
 	return _create_brush_from_arrays(vertices, uvs, smooth, materials);
 }
@@ -1546,8 +1545,9 @@ CSGBrush *CSGTorus::_build_brush() {
 	float min_radius = inner_radius;
 	float max_radius = outer_radius;
 
-	if (min_radius == max_radius)
-		return NULL; //sorry, can't
+	if (min_radius == max_radius) {
+		return memnew(CSGBrush); //sorry, can't
+	}
 
 	if (min_radius > max_radius) {
 		SWAP(min_radius, max_radius);
@@ -1771,8 +1771,9 @@ CSGBrush *CSGPolygon::_build_brush() {
 
 	// set our bounding box
 
-	if (polygon.size() < 3)
-		return NULL;
+	if (polygon.size() < 3) {
+		return memnew(CSGBrush);
+	}
 
 	Vector<Point2> final_polygon = polygon;
 
@@ -1782,8 +1783,9 @@ CSGBrush *CSGPolygon::_build_brush() {
 
 	Vector<int> triangles = Geometry::triangulate_polygon(final_polygon);
 
-	if (triangles.size() < 3)
-		return NULL;
+	if (triangles.size() < 3) {
+		return memnew(CSGBrush);
+	}
 
 	Path *path = NULL;
 	Ref<Curve3D> curve;
@@ -1807,14 +1809,17 @@ CSGBrush *CSGPolygon::_build_brush() {
 	Vector2 final_polygon_size = final_polygon_max - final_polygon_min;
 
 	if (mode == MODE_PATH) {
-		if (!has_node(path_node))
-			return NULL;
+		if (!has_node(path_node)) {
+			return memnew(CSGBrush);
+		}
 		Node *n = get_node(path_node);
-		if (!n)
-			return NULL;
+		if (!n) {
+			return memnew(CSGBrush);
+		}
 		path = Object::cast_to<Path>(n);
-		if (!path)
-			return NULL;
+		if (!path) {
+			return memnew(CSGBrush);
+		}
 
 		if (path != path_cache) {
 			if (path_cache) {
@@ -1830,10 +1835,12 @@ CSGBrush *CSGPolygon::_build_brush() {
 			path_cache = NULL;
 		}
 		curve = path->get_curve();
-		if (curve.is_null())
-			return NULL;
-		if (curve->get_baked_length() <= 0)
-			return NULL;
+		if (curve.is_null()) {
+			return memnew(CSGBrush);
+		}
+		if (curve->get_baked_length() <= 0) {
+			return memnew(CSGBrush);
+		}
 	}
 	CSGBrush *brush = memnew(CSGBrush);
 

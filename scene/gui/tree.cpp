@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -777,6 +777,9 @@ void TreeItem::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_text", "column", "text"), &TreeItem::set_text);
 	ClassDB::bind_method(D_METHOD("get_text", "column"), &TreeItem::get_text);
 
+	ClassDB::bind_method(D_METHOD("set_suffix", "column", "text"), &TreeItem::set_suffix);
+	ClassDB::bind_method(D_METHOD("get_suffix", "column"), &TreeItem::get_suffix);
+
 	ClassDB::bind_method(D_METHOD("set_icon", "column", "texture"), &TreeItem::set_icon);
 	ClassDB::bind_method(D_METHOD("get_icon", "column"), &TreeItem::get_icon);
 
@@ -1239,6 +1242,9 @@ int Tree::draw_item(const Point2i &p_pos, const Point2 &p_draw_ofs, const Size2 
 
 				if (p_item->cells[i].text.size() > 0) {
 					float icon_width = p_item->cells[i].get_icon_size().width;
+					if (p_item->get_icon_max_width(i) > 0) {
+						icon_width = p_item->get_icon_max_width(i);
+					}
 					r.position.x += icon_width;
 					r.size.x -= icon_width;
 				}
@@ -1276,8 +1282,9 @@ int Tree::draw_item(const Point2i &p_pos, const Point2 &p_draw_ofs, const Size2 
 			if (drop_mode_flags && drop_mode_over == p_item) {
 
 				Rect2 r = cell_rect;
+				bool has_parent = p_item->get_children() != nullptr;
 
-				if (drop_mode_section == -1 || drop_mode_section == 0) {
+				if (drop_mode_section == -1 || has_parent || drop_mode_section == 0) {
 					VisualServer::get_singleton()->canvas_item_add_rect(ci, Rect2(r.position.x, r.position.y, r.size.x, 1), cache.drop_position_color);
 				}
 
@@ -1286,7 +1293,7 @@ int Tree::draw_item(const Point2i &p_pos, const Point2 &p_draw_ofs, const Size2 
 					VisualServer::get_singleton()->canvas_item_add_rect(ci, Rect2(r.position.x + r.size.x - 1, r.position.y, 1, r.size.y), cache.drop_position_color);
 				}
 
-				if (drop_mode_section == 1 || drop_mode_section == 0) {
+				if ((drop_mode_section == 1 && !has_parent) || drop_mode_section == 0) {
 					VisualServer::get_singleton()->canvas_item_add_rect(ci, Rect2(r.position.x, r.position.y + r.size.y, r.size.x, 1), cache.drop_position_color);
 				}
 			}
@@ -2472,7 +2479,6 @@ void Tree::_gui_input(Ref<InputEvent> p_event) {
 
 						cache.hover_type = Cache::CLICK_TITLE;
 						cache.hover_index = i;
-						update();
 						break;
 					}
 				}
@@ -2491,6 +2497,9 @@ void Tree::_gui_input(Ref<InputEvent> p_event) {
 				if (v_scroll->is_visible_in_tree())
 					mpos.y += v_scroll->get_value();
 
+				TreeItem *old_it = cache.hover_item;
+				int old_col = cache.hover_cell;
+
 				int col, h, section;
 				TreeItem *it = _find_item_at_pos(root, mpos, col, h, section);
 
@@ -2505,18 +2514,26 @@ void Tree::_gui_input(Ref<InputEvent> p_event) {
 					}
 				}
 
-				if (it != cache.hover_item) {
-					cache.hover_item = it;
-					update();
-				}
+				cache.hover_item = it;
+				cache.hover_cell = col;
 
-				if (it && col != cache.hover_cell) {
-					cache.hover_cell = col;
-					update();
+				if (it != old_it || col != old_col) {
+					if (old_it && old_col >= old_it->cells.size()) {
+						// Columns may have changed since last update().
+						update();
+					} else {
+						// Only need to update if mouse enters/exits a button
+						bool was_over_button = old_it && old_it->cells[old_col].custom_button;
+						bool is_over_button = it && it->cells[col].custom_button;
+						if (was_over_button || is_over_button) {
+							update();
+						}
+					}
 				}
 			}
 		}
 
+		// Update if mouse enters/exits columns
 		if (cache.hover_type != old_hover || cache.hover_index != old_index) {
 			update();
 		}
@@ -3579,7 +3596,7 @@ void Tree::scroll_to_item(TreeItem *p_item) {
 
 	const Rect2 r = get_item_rect(p_item);
 
-	if (r.position.y < v_scroll->get_value()) {
+	if (r.position.y <= v_scroll->get_value()) {
 		v_scroll->set_value(r.position.y);
 	} else if (r.position.y + r.size.y + 2 * cache.vseparation > v_scroll->get_value() + get_size().y) {
 		v_scroll->set_value(r.position.y + r.size.y + 2 * cache.vseparation - get_size().y);
@@ -3589,6 +3606,8 @@ void Tree::scroll_to_item(TreeItem *p_item) {
 TreeItem *Tree::_search_item_text(TreeItem *p_at, const String &p_find, int *r_col, bool p_selectable, bool p_backwards) {
 
 	TreeItem *from = p_at;
+	TreeItem *loop = nullptr; // Safe-guard against infinite loop.
+
 	while (p_at) {
 
 		for (int i = 0; i < columns.size(); i++) {
@@ -3606,6 +3625,12 @@ TreeItem *Tree::_search_item_text(TreeItem *p_at, const String &p_find, int *r_c
 
 		if ((p_at) == from)
 			break;
+
+		if (!loop) {
+			loop = p_at;
+		} else if (loop == p_at) {
+			break;
+		}
 	}
 
 	return NULL;
@@ -3789,6 +3814,47 @@ TreeItem *Tree::get_item_at_position(const Point2 &p_pos) const {
 	}
 
 	return NULL;
+}
+
+int Tree::get_button_id_at_position(const Point2 &p_pos) const {
+	if (root) {
+		Point2 pos = p_pos;
+		pos -= cache.bg->get_offset();
+		pos.y -= _get_title_button_height();
+		if (pos.y < 0) {
+			return -1;
+		}
+
+		if (h_scroll->is_visible_in_tree()) {
+			pos.x += h_scroll->get_value();
+		}
+		if (v_scroll->is_visible_in_tree()) {
+			pos.y += v_scroll->get_value();
+		}
+
+		int col, h, section;
+		TreeItem *it = _find_item_at_pos(root, pos, col, h, section);
+
+		if (it) {
+			const TreeItem::Cell &c = it->cells[col];
+			int col_width = get_column_width(col);
+
+			for (int i = 0; i < col; i++) {
+				pos.x -= get_column_width(i);
+			}
+
+			for (int j = c.buttons.size() - 1; j >= 0; j--) {
+				Ref<Texture> b = c.buttons[j].texture;
+				Size2 size = b->get_size() + cache.button_pressed->get_minimum_size();
+				if (pos.x > col_width - size.width) {
+					return c.buttons[j].id;
+				}
+				col_width -= size.width;
+			}
+		}
+	}
+
+	return -1;
 }
 
 String Tree::get_tooltip(const Point2 &p_pos) const {

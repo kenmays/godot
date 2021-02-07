@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -1772,6 +1772,7 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("light_set_cull_mask", "light", "mask"), &VisualServer::light_set_cull_mask);
 	ClassDB::bind_method(D_METHOD("light_set_reverse_cull_face_mode", "light", "enabled"), &VisualServer::light_set_reverse_cull_face_mode);
 	ClassDB::bind_method(D_METHOD("light_set_use_gi", "light", "enabled"), &VisualServer::light_set_use_gi);
+	ClassDB::bind_method(D_METHOD("light_set_bake_mode", "light", "bake_mode"), &VisualServer::light_set_bake_mode);
 
 	ClassDB::bind_method(D_METHOD("light_omni_set_shadow_mode", "light", "mode"), &VisualServer::light_omni_set_shadow_mode);
 	ClassDB::bind_method(D_METHOD("light_omni_set_shadow_detail", "light", "detail"), &VisualServer::light_omni_set_shadow_detail);
@@ -1890,6 +1891,8 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("viewport_set_shadow_atlas_size", "viewport", "size"), &VisualServer::viewport_set_shadow_atlas_size);
 	ClassDB::bind_method(D_METHOD("viewport_set_shadow_atlas_quadrant_subdivision", "viewport", "quadrant", "subdivision"), &VisualServer::viewport_set_shadow_atlas_quadrant_subdivision);
 	ClassDB::bind_method(D_METHOD("viewport_set_msaa", "viewport", "msaa"), &VisualServer::viewport_set_msaa);
+	ClassDB::bind_method(D_METHOD("viewport_set_use_fxaa", "viewport", "fxaa"), &VisualServer::viewport_set_use_fxaa);
+	ClassDB::bind_method(D_METHOD("viewport_set_use_debanding", "viewport", "debanding"), &VisualServer::viewport_set_use_debanding);
 	ClassDB::bind_method(D_METHOD("viewport_set_hdr", "viewport", "enabled"), &VisualServer::viewport_set_hdr);
 	ClassDB::bind_method(D_METHOD("viewport_set_usage", "viewport", "usage"), &VisualServer::viewport_set_usage);
 	ClassDB::bind_method(D_METHOD("viewport_get_render_info", "viewport", "info"), &VisualServer::viewport_get_render_info);
@@ -1935,7 +1938,7 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("instance_set_blend_shape_weight", "instance", "shape", "weight"), &VisualServer::instance_set_blend_shape_weight);
 	ClassDB::bind_method(D_METHOD("instance_set_surface_material", "instance", "surface", "material"), &VisualServer::instance_set_surface_material);
 	ClassDB::bind_method(D_METHOD("instance_set_visible", "instance", "visible"), &VisualServer::instance_set_visible);
-	ClassDB::bind_method(D_METHOD("instance_set_use_lightmap", "instance", "lightmap_instance", "lightmap"), &VisualServer::instance_set_use_lightmap);
+	ClassDB::bind_method(D_METHOD("instance_set_use_lightmap", "instance", "lightmap_instance", "lightmap", "lightmap_slice", "lightmap_uv_rect"), &VisualServer::instance_set_use_lightmap, DEFVAL(-1), DEFVAL(Rect2(0, 0, 1, 1)));
 	ClassDB::bind_method(D_METHOD("instance_set_custom_aabb", "instance", "aabb"), &VisualServer::instance_set_custom_aabb);
 	ClassDB::bind_method(D_METHOD("instance_attach_skeleton", "instance", "skeleton"), &VisualServer::instance_attach_skeleton);
 	ClassDB::bind_method(D_METHOD("instance_set_exterior", "instance", "enabled"), &VisualServer::instance_set_exterior);
@@ -2044,10 +2047,15 @@ void VisualServer::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_boot_image", "image", "color", "scale", "use_filter"), &VisualServer::set_boot_image, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("set_default_clear_color", "color"), &VisualServer::set_default_clear_color);
+	ClassDB::bind_method(D_METHOD("set_shader_time_scale", "scale"), &VisualServer::set_shader_time_scale);
 
 	ClassDB::bind_method(D_METHOD("has_feature", "feature"), &VisualServer::has_feature);
 	ClassDB::bind_method(D_METHOD("has_os_feature", "feature"), &VisualServer::has_os_feature);
 	ClassDB::bind_method(D_METHOD("set_debug_generate_wireframes", "generate"), &VisualServer::set_debug_generate_wireframes);
+
+	ClassDB::bind_method(D_METHOD("is_render_loop_enabled"), &VisualServer::is_render_loop_enabled);
+	ClassDB::bind_method(D_METHOD("set_render_loop_enabled", "enabled"), &VisualServer::set_render_loop_enabled);
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "render_loop_enabled"), "set_render_loop_enabled", "is_render_loop_enabled");
 
 	BIND_CONSTANT(NO_INDEX_ARRAY);
 	BIND_CONSTANT(ARRAY_WEIGHTS_SIZE);
@@ -2148,6 +2156,10 @@ void VisualServer::_bind_methods() {
 	BIND_ENUM_CONSTANT(LIGHT_PARAM_SHADOW_BIAS);
 	BIND_ENUM_CONSTANT(LIGHT_PARAM_SHADOW_BIAS_SPLIT_SCALE);
 	BIND_ENUM_CONSTANT(LIGHT_PARAM_MAX);
+
+	BIND_ENUM_CONSTANT(LIGHT_BAKE_DISABLED);
+	BIND_ENUM_CONSTANT(LIGHT_BAKE_INDIRECT);
+	BIND_ENUM_CONSTANT(LIGHT_BAKE_ALL);
 
 	BIND_ENUM_CONSTANT(LIGHT_OMNI_SHADOW_DUAL_PARABOLOID);
 	BIND_ENUM_CONSTANT(LIGHT_OMNI_SHADOW_CUBE);
@@ -2367,6 +2379,14 @@ RID VisualServer::instance_create2(RID p_base, RID p_scenario) {
 	return instance;
 }
 
+bool VisualServer::is_render_loop_enabled() const {
+	return render_loop_enabled;
+}
+
+void VisualServer::set_render_loop_enabled(bool p_enabled) {
+	render_loop_enabled = p_enabled;
+}
+
 VisualServer::VisualServer() {
 
 	//ERR_FAIL_COND(singleton);
@@ -2377,6 +2397,9 @@ VisualServer::VisualServer() {
 	GLOBAL_DEF_RST("rendering/vram_compression/import_etc", false);
 	GLOBAL_DEF_RST("rendering/vram_compression/import_etc2", true);
 	GLOBAL_DEF_RST("rendering/vram_compression/import_pvrtc", false);
+
+	GLOBAL_DEF("rendering/limits/time/time_rollover_secs", 3600);
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/limits/time/time_rollover_secs", PropertyInfo(Variant::REAL, "rendering/limits/time/time_rollover_secs", PROPERTY_HINT_RANGE, "0,10000,1,or_greater"));
 
 	GLOBAL_DEF("rendering/quality/directional_shadow/size", 4096);
 	GLOBAL_DEF("rendering/quality/directional_shadow/size.mobile", 2048);
@@ -2414,21 +2437,44 @@ VisualServer::VisualServer() {
 	GLOBAL_DEF("rendering/quality/depth_prepass/enable", true);
 	GLOBAL_DEF("rendering/quality/depth_prepass/disable_for_vendors", "PowerVR,Mali,Adreno,Apple");
 
+	GLOBAL_DEF("rendering/quality/filters/anisotropic_filter_level", 4);
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/filters/anisotropic_filter_level", PropertyInfo(Variant::INT, "rendering/quality/filters/anisotropic_filter_level", PROPERTY_HINT_RANGE, "1,16,1"));
 	GLOBAL_DEF("rendering/quality/filters/use_nearest_mipmap_filter", false);
 
-	GLOBAL_DEF("rendering/gles2/batching/use_batching", true);
-	GLOBAL_DEF("rendering/gles2/batching/max_join_item_commands", 16);
-	GLOBAL_DEF("rendering/gles2/batching/colored_vertex_format_threshold", 0.25f);
-	GLOBAL_DEF("rendering/gles2/batching/light_scissor_area_threshold", 1.0f);
-	GLOBAL_DEF("rendering/gles2/batching/batch_buffer_size", 16384);
-	GLOBAL_DEF("rendering/gles2/debug/flash_batching", false);
-	GLOBAL_DEF("rendering/gles2/debug/diagnose_frame", false);
-	GLOBAL_DEF_RST("rendering/gles2/debug/use_batching_in_editor", true);
+	GLOBAL_DEF("rendering/quality/skinning/software_skinning_fallback", true);
+	GLOBAL_DEF("rendering/quality/skinning/force_software_skinning", false);
 
-	ProjectSettings::get_singleton()->set_custom_property_info("rendering/gles2/batching/max_join_item_commands", PropertyInfo(Variant::INT, "rendering/gles2/batching/max_join_item_commands", PROPERTY_HINT_RANGE, "0,65535"));
-	ProjectSettings::get_singleton()->set_custom_property_info("rendering/gles2/batching/colored_vertex_format_threshold", PropertyInfo(Variant::REAL, "rendering/gles2/batching/colored_vertex_format_threshold", PROPERTY_HINT_RANGE, "0.0,1.0,0.01"));
-	ProjectSettings::get_singleton()->set_custom_property_info("rendering/gles2/batching/batch_buffer_size", PropertyInfo(Variant::INT, "rendering/gles2/batching/batch_buffer_size", PROPERTY_HINT_RANGE, "1024,65535,1024"));
-	ProjectSettings::get_singleton()->set_custom_property_info("rendering/gles2/batching/light_scissor_area_threshold", PropertyInfo(Variant::REAL, "rendering/gles2/batching/light_scissor_area_threshold", PROPERTY_HINT_RANGE, "0.0,1.0"));
+	const char *sz_balance_render_tree = "rendering/quality/spatial_partitioning/render_tree_balance";
+	GLOBAL_DEF(sz_balance_render_tree, 0.0f);
+	ProjectSettings::get_singleton()->set_custom_property_info(sz_balance_render_tree, PropertyInfo(Variant::REAL, sz_balance_render_tree, PROPERTY_HINT_RANGE, "0.0,1.0,0.01"));
+
+	GLOBAL_DEF("rendering/quality/2d/use_software_skinning", true);
+	GLOBAL_DEF("rendering/quality/2d/ninepatch_mode", 0);
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/2d/ninepatch_mode", PropertyInfo(Variant::INT, "rendering/quality/2d/ninepatch_mode", PROPERTY_HINT_ENUM, "Default,Scaling"));
+
+	GLOBAL_DEF("rendering/batching/options/use_batching", true);
+	GLOBAL_DEF_RST("rendering/batching/options/use_batching_in_editor", true);
+	GLOBAL_DEF("rendering/batching/options/single_rect_fallback", false);
+	GLOBAL_DEF("rendering/batching/parameters/max_join_item_commands", 16);
+	GLOBAL_DEF("rendering/batching/parameters/colored_vertex_format_threshold", 0.25f);
+	GLOBAL_DEF("rendering/batching/lights/scissor_area_threshold", 1.0f);
+	GLOBAL_DEF("rendering/batching/lights/max_join_items", 32);
+	GLOBAL_DEF("rendering/batching/parameters/batch_buffer_size", 16384);
+	GLOBAL_DEF("rendering/batching/parameters/item_reordering_lookahead", 4);
+	GLOBAL_DEF("rendering/batching/debug/flash_batching", false);
+	GLOBAL_DEF("rendering/batching/debug/diagnose_frame", false);
+	GLOBAL_DEF("rendering/gles2/compatibility/disable_half_float", false);
+	GLOBAL_DEF("rendering/gles2/compatibility/enable_high_float.Android", false);
+	GLOBAL_DEF("rendering/batching/precision/uv_contract", false);
+	GLOBAL_DEF("rendering/batching/precision/uv_contract_amount", 100);
+
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/batching/parameters/max_join_item_commands", PropertyInfo(Variant::INT, "rendering/batching/parameters/max_join_item_commands", PROPERTY_HINT_RANGE, "0,65535"));
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/batching/parameters/colored_vertex_format_threshold", PropertyInfo(Variant::REAL, "rendering/batching/parameters/colored_vertex_format_threshold", PROPERTY_HINT_RANGE, "0.0,1.0,0.01"));
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/batching/parameters/batch_buffer_size", PropertyInfo(Variant::INT, "rendering/batching/parameters/batch_buffer_size", PROPERTY_HINT_RANGE, "1024,65535,1024"));
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/batching/lights/scissor_area_threshold", PropertyInfo(Variant::REAL, "rendering/batching/lights/scissor_area_threshold", PROPERTY_HINT_RANGE, "0.0,1.0"));
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/batching/lights/max_join_items", PropertyInfo(Variant::INT, "rendering/batching/lights/max_join_items", PROPERTY_HINT_RANGE, "0,512"));
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/batching/parameters/item_reordering_lookahead", PropertyInfo(Variant::INT, "rendering/batching/parameters/item_reordering_lookahead", PROPERTY_HINT_RANGE, "0,256"));
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/batching/precision/uv_contract_amount", PropertyInfo(Variant::INT, "rendering/batching/precision/uv_contract_amount", PROPERTY_HINT_RANGE, "0,10000"));
 }
 
 VisualServer::~VisualServer() {

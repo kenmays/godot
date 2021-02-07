@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -45,6 +45,7 @@ class RasterizerGLES3 : public Rasterizer {
 	RasterizerSceneGLES3 *scene;
 
 	double time_total;
+	float time_scale;
 
 public:
 	virtual RasterizerStorage *get_storage();
@@ -52,6 +53,7 @@ public:
 	virtual RasterizerScene *get_scene();
 
 	virtual void set_boot_image(const Ref<Image> &p_image, const Color &p_color, bool p_scale, bool p_use_filter = true);
+	virtual void set_shader_time_scale(float p_scale);
 
 	virtual void initialize();
 	virtual void begin_frame(double frame_step);
@@ -68,6 +70,8 @@ public:
 	static void register_config();
 
 	virtual bool is_low_end() const { return false; }
+
+	virtual const char *gl_check_for_error(bool p_print_error = true);
 
 	RasterizerGLES3();
 	~RasterizerGLES3();

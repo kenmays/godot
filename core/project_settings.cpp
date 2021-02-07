@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -268,12 +268,12 @@ void ProjectSettings::_get_property_list(List<PropertyInfo> *p_list) const {
 	}
 }
 
-bool ProjectSettings::_load_resource_pack(const String &p_pack, bool p_replace_files) {
+bool ProjectSettings::_load_resource_pack(const String &p_pack, bool p_replace_files, int p_offset) {
 
 	if (PackedData::get_singleton()->is_disabled())
 		return false;
 
-	bool ok = PackedData::get_singleton()->add_pack(p_pack, p_replace_files) == OK;
+	bool ok = PackedData::get_singleton()->add_pack(p_pack, p_replace_files, p_offset) == OK;
 
 	if (!ok)
 		return false;
@@ -307,10 +307,16 @@ void ProjectSettings::_convert_to_last_version(int p_from_version) {
  * using the following merit order:
  *  - If using NetworkClient, try to lookup project file or fail.
  *  - If --main-pack was passed by the user (`p_main_pack`), load it or fail.
- *  - Search for .pck file matching binary name. There are two possibilities:
- *    o exec_path.get_basename() + '.pck' (e.g. 'win_game.exe' -> 'win_game.pck')
- *    o exec_path + '.pck' (e.g. 'linux_game' -> 'linux_game.pck')
- *    For each tentative, if the file exists, load it or fail.
+ *  - Search for project PCKs automatically. For each step we try loading a potential
+ *    PCK, and if it doesn't work, we proceed to the next step. If any step succeeds,
+ *    we try loading the project settings, and abort if it fails. Steps:
+ *    o Bundled PCK in the executable.
+ *    o [macOS only] PCK with same basename as the binary in the .app resource dir.
+ *    o PCK with same basename as the binary in the binary's directory. We handle both
+ *      changing the extension to '.pck' (e.g. 'win_game.exe' -> 'win_game.pck') and
+ *      appending '.pck' to the binary name (e.g. 'linux_game' -> 'linux_game.pck').
+ *    o PCK with the same basename as the binary in the current working directory.
+ *      Same as above for the two possible PCK file names.
  *  - On relevant platforms (Android/iOS), lookup project file in OS resource path.
  *    If found, load it or fail.
  *  - Lookup project file in passed `p_path` (--path passed by the user), i.e. we
@@ -354,76 +360,68 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 	String exec_path = OS::get_singleton()->get_executable_path();
 
 	if (exec_path != "") {
-		// Attempt with exec_name.pck
+		// We do several tests sequentially until one succeeds to find a PCK,
+		// and if so we attempt loading it at the end.
+
+		// Attempt with PCK bundled into executable.
+		bool found = _load_resource_pack(exec_path);
+
+		// Attempt with exec_name.pck.
 		// (This is the usual case when distributing a Godot game.)
+		String exec_dir = exec_path.get_base_dir();
+		String exec_filename = exec_path.get_file();
+		String exec_basename = exec_filename.get_basename();
 
 		// Based on the OS, it can be the exec path + '.pck' (Linux w/o extension, macOS in .app bundle)
 		// or the exec path's basename + '.pck' (Windows).
 		// We need to test both possibilities as extensions for Linux binaries are optional
 		// (so both 'mygame.bin' and 'mygame' should be able to find 'mygame.pck').
 
-		bool found = false;
-
-		String exec_dir = exec_path.get_base_dir();
-		String exec_filename = exec_path.get_file();
-		String exec_basename = exec_filename.get_basename();
-
-		// Try to load data pack at the location of the executable
-		// As mentioned above, we have two potential names to attempt
-
-		if (_load_resource_pack(exec_dir.plus_file(exec_basename + ".pck")) ||
-				_load_resource_pack(exec_dir.plus_file(exec_filename + ".pck"))) {
-			found = true;
-		} else {
-			// If we couldn't find them next to the executable, we attempt
-			// the current working directory. Same story, two tests.
-			if (_load_resource_pack(exec_basename + ".pck") ||
-					_load_resource_pack(exec_filename + ".pck")) {
-				found = true;
-			}
-		}
-
 #ifdef OSX_ENABLED
-		// Attempt to load PCK from macOS .app bundle resources
 		if (!found) {
-			if (_load_resource_pack(OS::get_singleton()->get_bundle_resource_dir().plus_file(exec_basename + ".pck"))) {
-				found = true;
-			}
+			// Attempt to load PCK from macOS .app bundle resources.
+			found = _load_resource_pack(OS::get_singleton()->get_bundle_resource_dir().plus_file(exec_basename + ".pck")) || _load_resource_pack(OS::get_singleton()->get_bundle_resource_dir().plus_file(exec_filename + ".pck"));
 		}
 #endif
 
-		// Attempt with PCK bundled into executable
 		if (!found) {
-			if (_load_resource_pack(exec_path)) {
-				found = true;
-			}
+			// Try to load data pack at the location of the executable.
+			// As mentioned above, we have two potential names to attempt.
+			found = _load_resource_pack(exec_dir.plus_file(exec_basename + ".pck")) || _load_resource_pack(exec_dir.plus_file(exec_filename + ".pck"));
 		}
 
-		// If we opened our package, try and load our project
+		if (!found) {
+			// If we couldn't find them next to the executable, we attempt
+			// the current working directory. Same story, two tests.
+			found = _load_resource_pack(exec_basename + ".pck") || _load_resource_pack(exec_filename + ".pck");
+		}
+
+		// If we opened our package, try and load our project.
 		if (found) {
 			Error err = _load_settings_text_or_binary("res://project.godot", "res://project.binary");
 			if (err == OK) {
-				// Load override from location of executable
-				// Optional, we don't mind if it fails
+				// Load override from location of the executable.
+				// Optional, we don't mind if it fails.
 				_load_settings_text(exec_path.get_base_dir().plus_file("override.cfg"));
 			}
 			return err;
 		}
 	}
 
-	// Try to use the filesystem for files, according to OS. (only Android -when reading from pck- and iOS use this)
+	// Try to use the filesystem for files, according to OS.
+	// (Only Android -when reading from pck- and iOS use this.)
 
 	if (OS::get_singleton()->get_resource_dir() != "") {
 		// OS will call ProjectSettings->get_resource_path which will be empty if not overridden!
 		// If the OS would rather use a specific location, then it will not be empty.
 		resource_path = OS::get_singleton()->get_resource_dir().replace("\\", "/");
 		if (resource_path != "" && resource_path[resource_path.length() - 1] == '/') {
-			resource_path = resource_path.substr(0, resource_path.length() - 1); // chop end
+			resource_path = resource_path.substr(0, resource_path.length() - 1); // Chop end.
 		}
 
 		Error err = _load_settings_text_or_binary("res://project.godot", "res://project.binary");
 		if (err == OK) {
-			// Optional, we don't mind if it fails
+			// Optional, we don't mind if it fails.
 			_load_settings_text("res://override.cfg");
 		}
 		return err;
@@ -444,7 +442,7 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 	while (true) {
 		err = _load_settings_text_or_binary(current_dir.plus_file("project.godot"), current_dir.plus_file("project.binary"));
 		if (err == OK) {
-			// Optional, we don't mind if it fails
+			// Optional, we don't mind if it fails.
 			_load_settings_text(current_dir.plus_file("override.cfg"));
 			candidate = current_dir;
 			found = true;
@@ -463,14 +461,15 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 	}
 
 	resource_path = candidate;
-	resource_path = resource_path.replace("\\", "/"); // windows path to unix path just in case
+	resource_path = resource_path.replace("\\", "/"); // Windows path to Unix path just in case.
 	memdelete(d);
 
 	if (!found)
 		return err;
 
-	if (resource_path.length() && resource_path[resource_path.length() - 1] == '/')
-		resource_path = resource_path.substr(0, resource_path.length() - 1); // chop end
+	if (resource_path.length() && resource_path[resource_path.length() - 1] == '/') {
+		resource_path = resource_path.substr(0, resource_path.length() - 1); // Chop end.
+	}
 
 	return OK;
 }
@@ -483,6 +482,14 @@ Error ProjectSettings::setup(const String &p_path, const String &p_main_pack, bo
 			_load_settings_text(custom_settings);
 		}
 	}
+	// Using GLOBAL_GET on every block for compressing can be slow, so assigning here.
+	Compression::zstd_long_distance_matching = GLOBAL_GET("compression/formats/zstd/long_distance_matching");
+	Compression::zstd_level = GLOBAL_GET("compression/formats/zstd/compression_level");
+	Compression::zstd_window_log_size = GLOBAL_GET("compression/formats/zstd/window_log_size");
+
+	Compression::zlib_level = GLOBAL_GET("compression/formats/zlib/compression_level");
+
+	Compression::gzip_level = GLOBAL_GET("compression/formats/gzip/compression_level");
 
 	return err;
 }
@@ -605,20 +612,26 @@ Error ProjectSettings::_load_settings_text(const String &p_path) {
 }
 
 Error ProjectSettings::_load_settings_text_or_binary(const String &p_text_path, const String &p_bin_path) {
-
-	// Attempt first to load the text-based project.godot file
-	Error err_text = _load_settings_text(p_text_path);
-	if (err_text == OK) {
+	// Attempt first to load the binary project.godot file.
+	Error err = _load_settings_binary(p_bin_path);
+	if (err == OK) {
 		return OK;
-	} else if (err_text != ERR_FILE_NOT_FOUND) {
-		// If the text-based file exists but can't be loaded, we want to know it
-		ERR_PRINTS("Couldn't load file '" + p_text_path + "', error code " + itos(err_text) + ".");
-		return err_text;
+	} else if (err != ERR_FILE_NOT_FOUND) {
+		// If the file exists but can't be loaded, we want to know it.
+		ERR_PRINT("Couldn't load file '" + p_bin_path + "', error code " + itos(err) + ".");
+		return err;
 	}
 
-	// Fallback to binary project.binary file if text-based was not found
-	Error err_bin = _load_settings_binary(p_bin_path);
-	return err_bin;
+	// Fallback to text-based project.godot file if binary was not found.
+	err = _load_settings_text(p_text_path);
+	if (err == OK) {
+		return OK;
+	} else if (err != ERR_FILE_NOT_FOUND) {
+		ERR_PRINT("Couldn't load file '" + p_text_path + "', error code " + itos(err) + ".");
+		return err;
+	}
+
+	return err;
 }
 
 int ProjectSettings::get_order(const String &p_name) const {
@@ -990,7 +1003,7 @@ void ProjectSettings::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("localize_path", "path"), &ProjectSettings::localize_path);
 	ClassDB::bind_method(D_METHOD("globalize_path", "path"), &ProjectSettings::globalize_path);
 	ClassDB::bind_method(D_METHOD("save"), &ProjectSettings::save);
-	ClassDB::bind_method(D_METHOD("load_resource_pack", "pack", "replace_files"), &ProjectSettings::_load_resource_pack, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("load_resource_pack", "pack", "replace_files", "offset"), &ProjectSettings::_load_resource_pack, DEFVAL(true), DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("property_can_revert", "name"), &ProjectSettings::property_can_revert);
 	ClassDB::bind_method(D_METHOD("property_get_revert", "name"), &ProjectSettings::property_get_revert);
 
@@ -998,6 +1011,8 @@ void ProjectSettings::_bind_methods() {
 }
 
 ProjectSettings::ProjectSettings() {
+	// Initialization of engine variables should be done in the setup() method,
+	// so that the values can be overridden from project.godot or project.binary.
 
 	singleton = this;
 	last_order = NO_BUILTIN_ORDER_BASE;
@@ -1201,18 +1216,17 @@ ProjectSettings::ProjectSettings() {
 	GLOBAL_DEF("debug/settings/profiler/max_functions", 16384);
 	custom_prop_info["debug/settings/profiler/max_functions"] = PropertyInfo(Variant::INT, "debug/settings/profiler/max_functions", PROPERTY_HINT_RANGE, "128,65535,1");
 
-	//assigning here, because using GLOBAL_GET on every block for compressing can be slow
-	Compression::zstd_long_distance_matching = GLOBAL_DEF("compression/formats/zstd/long_distance_matching", false);
+	GLOBAL_DEF("compression/formats/zstd/long_distance_matching", Compression::zstd_long_distance_matching);
 	custom_prop_info["compression/formats/zstd/long_distance_matching"] = PropertyInfo(Variant::BOOL, "compression/formats/zstd/long_distance_matching");
-	Compression::zstd_level = GLOBAL_DEF("compression/formats/zstd/compression_level", 3);
+	GLOBAL_DEF("compression/formats/zstd/compression_level", Compression::zstd_level);
 	custom_prop_info["compression/formats/zstd/compression_level"] = PropertyInfo(Variant::INT, "compression/formats/zstd/compression_level", PROPERTY_HINT_RANGE, "1,22,1");
-	Compression::zstd_window_log_size = GLOBAL_DEF("compression/formats/zstd/window_log_size", 27);
+	GLOBAL_DEF("compression/formats/zstd/window_log_size", Compression::zstd_window_log_size);
 	custom_prop_info["compression/formats/zstd/window_log_size"] = PropertyInfo(Variant::INT, "compression/formats/zstd/window_log_size", PROPERTY_HINT_RANGE, "10,30,1");
 
-	Compression::zlib_level = GLOBAL_DEF("compression/formats/zlib/compression_level", Z_DEFAULT_COMPRESSION);
+	GLOBAL_DEF("compression/formats/zlib/compression_level", Compression::zlib_level);
 	custom_prop_info["compression/formats/zlib/compression_level"] = PropertyInfo(Variant::INT, "compression/formats/zlib/compression_level", PROPERTY_HINT_RANGE, "-1,9,1");
 
-	Compression::gzip_level = GLOBAL_DEF("compression/formats/gzip/compression_level", Z_DEFAULT_COMPRESSION);
+	GLOBAL_DEF("compression/formats/gzip/compression_level", Compression::gzip_level);
 	custom_prop_info["compression/formats/gzip/compression_level"] = PropertyInfo(Variant::INT, "compression/formats/gzip/compression_level", PROPERTY_HINT_RANGE, "-1,9,1");
 
 	// Would ideally be defined in an Android-specific file, but then it doesn't appear in the docs

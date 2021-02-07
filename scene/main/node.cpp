@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -1004,7 +1004,7 @@ void Node::_validate_child_name(Node *p_child, bool p_force_human_readable) {
 
 		bool unique = true;
 
-		if (p_child->data.name == StringName() || p_child->data.name.operator String()[0] == '@') {
+		if (p_child->data.name == StringName()) {
 			//new unique name must be assigned
 			unique = false;
 		} else {
@@ -1189,7 +1189,7 @@ void Node::add_child_below_node(Node *p_node, Node *p_child, bool p_legible_uniq
 
 	add_child(p_child, p_legible_unique_name);
 
-	if (is_a_parent_of(p_node)) {
+	if (p_node->data.parent == this) {
 		move_child(p_child, p_node->get_position_in_parent() + 1);
 	} else {
 		WARN_PRINTS("Cannot move under node " + p_node->get_name() + " as " + p_child->get_name() + " does not share a parent.");
@@ -1901,37 +1901,23 @@ String Node::get_editor_description() const {
 }
 
 void Node::set_editable_instance(Node *p_node, bool p_editable) {
-
 	ERR_FAIL_NULL(p_node);
 	ERR_FAIL_COND(!is_a_parent_of(p_node));
-	NodePath p = get_path_to(p_node);
 	if (!p_editable) {
-		data.editable_instances.erase(p);
+		p_node->data.editable_instance = false;
 		// Avoid this flag being needlessly saved;
 		// also give more visual feedback if editable children is re-enabled
 		set_display_folded(false);
 	} else {
-		data.editable_instances[p] = true;
+		p_node->data.editable_instance = true;
 	}
 }
 
 bool Node::is_editable_instance(const Node *p_node) const {
-
 	if (!p_node)
 		return false; //easier, null is never editable :)
 	ERR_FAIL_COND_V(!is_a_parent_of(p_node), false);
-	NodePath p = get_path_to(p_node);
-	return data.editable_instances.has(p);
-}
-
-void Node::set_editable_instances(const HashMap<NodePath, int> &p_editable_instances) {
-
-	data.editable_instances = p_editable_instances;
-}
-
-HashMap<NodePath, int> Node::get_editable_instances() const {
-
-	return data.editable_instances;
+	return p_node->data.editable_instance;
 }
 
 void Node::set_scene_instance_state(const Ref<SceneState> &p_state) {
@@ -2247,42 +2233,51 @@ void Node::_duplicate_and_reown(Node *p_new_parent, const Map<Node *, Node *> &p
 // if the emitter node comes later in tree order than the receiver
 void Node::_duplicate_signals(const Node *p_original, Node *p_copy) const {
 
-	if (this != p_original && (get_owner() != p_original && get_owner() != p_original->get_owner()))
+	if ((this != p_original) && !(p_original->is_a_parent_of(this))) {
 		return;
-
-	List<Connection> conns;
-	get_all_signal_connections(&conns);
-
-	for (List<Connection>::Element *E = conns.front(); E; E = E->next()) {
-
-		if (E->get().flags & CONNECT_PERSIST) {
-			//user connected
-			NodePath p = p_original->get_path_to(this);
-			Node *copy = p_copy->get_node(p);
-
-			Node *target = Object::cast_to<Node>(E->get().target);
-			if (!target) {
-				continue;
-			}
-			NodePath ptarget = p_original->get_path_to(target);
-
-			Node *copytarget = target;
-
-			// Atempt to find a path to the duplicate target, if it seems it's not part
-			// of the duplicated and not yet parented hierarchy then at least try to connect
-			// to the same target as the original
-
-			if (p_copy->has_node(ptarget))
-				copytarget = p_copy->get_node(ptarget);
-
-			if (copy && copytarget && !copy->is_connected(E->get().signal, copytarget, E->get().method)) {
-				copy->connect(E->get().signal, copytarget, E->get().method, E->get().binds, E->get().flags);
-			}
-		}
 	}
 
-	for (int i = 0; i < get_child_count(); i++) {
-		get_child(i)->_duplicate_signals(p_original, p_copy);
+	List<const Node *> process_list;
+	process_list.push_back(this);
+	while (!process_list.empty()) {
+
+		const Node *n = process_list.front()->get();
+		process_list.pop_front();
+
+		List<Connection> conns;
+		n->get_all_signal_connections(&conns);
+
+		for (List<Connection>::Element *E = conns.front(); E; E = E->next()) {
+			if (E->get().flags & CONNECT_PERSIST) {
+				//user connected
+				NodePath p = p_original->get_path_to(n);
+				Node *copy = p_copy->get_node(p);
+
+				Node *target = Object::cast_to<Node>(E->get().target);
+				if (!target) {
+					continue;
+				}
+				NodePath ptarget = p_original->get_path_to(target);
+
+				Node *copytarget = target;
+
+				// Attempt to find a path to the duplicate target, if it seems it's not part
+				// of the duplicated and not yet parented hierarchy then at least try to connect
+				// to the same target as the original
+
+				if (p_copy->has_node(ptarget)) {
+					copytarget = p_copy->get_node(ptarget);
+				}
+
+				if (copy && copytarget && !copy->is_connected(E->get().signal, copytarget, E->get().method)) {
+					copy->connect(E->get().signal, copytarget, E->get().method, E->get().binds, E->get().flags);
+				}
+			}
+		}
+
+		for (int i = 0; i < n->get_child_count(); i++) {
+			process_list.push_back(n->get_child(i));
+		}
 	}
 }
 
@@ -2864,6 +2859,7 @@ void Node::_bind_methods() {
 	BIND_CONSTANT(NOTIFICATION_PATH_CHANGED);
 	BIND_CONSTANT(NOTIFICATION_INTERNAL_PROCESS);
 	BIND_CONSTANT(NOTIFICATION_INTERNAL_PHYSICS_PROCESS);
+	BIND_CONSTANT(NOTIFICATION_POST_ENTER_TREE);
 
 	BIND_CONSTANT(NOTIFICATION_WM_MOUSE_ENTER);
 	BIND_CONSTANT(NOTIFICATION_WM_MOUSE_EXIT);
@@ -2895,7 +2891,6 @@ void Node::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("tree_exiting"));
 	ADD_SIGNAL(MethodInfo("tree_exited"));
 
-	ADD_GROUP("Pause", "pause_");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "pause_mode", PROPERTY_HINT_ENUM, "Inherit,Stop,Process"), "set_pause_mode", "get_pause_mode");
 
 #ifdef ENABLE_DEPRECATED
@@ -2961,6 +2956,7 @@ Node::Node() {
 	data.use_placeholder = false;
 	data.display_folded = false;
 	data.ready_first = true;
+	data.editable_instance = false;
 
 	orphan_node_count++;
 }

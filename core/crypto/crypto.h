@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -76,9 +76,9 @@ public:
 	static Crypto *create();
 	static void load_default_certificates(String p_path);
 
-	virtual PoolByteArray generate_random_bytes(int p_bytes);
-	virtual Ref<CryptoKey> generate_rsa(int p_bytes);
-	virtual Ref<X509Certificate> generate_self_signed_certificate(Ref<CryptoKey> p_key, String p_issuer_name, String p_not_before, String p_not_after);
+	virtual PoolByteArray generate_random_bytes(int p_bytes) = 0;
+	virtual Ref<CryptoKey> generate_rsa(int p_bytes) = 0;
+	virtual Ref<X509Certificate> generate_self_signed_certificate(Ref<CryptoKey> p_key, String p_issuer_name, String p_not_before, String p_not_after) = 0;
 
 	Crypto();
 };

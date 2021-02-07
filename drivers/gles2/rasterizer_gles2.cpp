@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -270,16 +270,15 @@ void RasterizerGLES2::initialize() {
 }
 
 void RasterizerGLES2::begin_frame(double frame_step) {
-	time_total += frame_step;
+	time_total += frame_step * time_scale;
 
 	if (frame_step == 0) {
 		//to avoid hiccups
 		frame_step = 0.001;
 	}
 
-	// double time_roll_over = GLOBAL_GET("rendering/limits/time/time_rollover_secs");
-	// if (time_total > time_roll_over)
-	//	time_total = 0; //roll over every day (should be customz
+	double time_roll_over = GLOBAL_GET("rendering/limits/time/time_rollover_secs");
+	time_total = Math::fmod(time_total, time_roll_over);
 
 	storage->frame.time[0] = time_total;
 	storage->frame.time[1] = Math::fmod(time_total, 3600);
@@ -396,6 +395,11 @@ void RasterizerGLES2::set_boot_image(const Ref<Image> &p_image, const Color &p_c
 	end_frame(true);
 }
 
+void RasterizerGLES2::set_shader_time_scale(float p_scale) {
+
+	time_scale = p_scale;
+}
+
 void RasterizerGLES2::blit_render_target_to_screen(RID p_render_target, const Rect2 &p_screen_rect, int p_screen) {
 
 	ERR_FAIL_COND(storage->frame.current_rt);
@@ -403,7 +407,7 @@ void RasterizerGLES2::blit_render_target_to_screen(RID p_render_target, const Re
 	RasterizerStorageGLES2::RenderTarget *rt = storage->render_target_owner.getornull(p_render_target);
 	ERR_FAIL_COND(!rt);
 
-	canvas->state.canvas_shader.set_conditional(CanvasShaderGLES2::USE_TEXTURE_RECT, true);
+	canvas->_set_texture_rect_mode(true);
 
 	canvas->state.canvas_shader.set_custom_shader(0);
 	canvas->state.canvas_shader.bind();
@@ -449,18 +453,7 @@ void RasterizerGLES2::output_lens_distorted_to_screen(RID p_render_target, const
 void RasterizerGLES2::end_frame(bool p_swap_buffers) {
 
 	if (OS::get_singleton()->is_layered_allowed()) {
-		if (OS::get_singleton()->get_window_per_pixel_transparency_enabled()) {
-#if (defined WINDOWS_ENABLED) && !(defined UWP_ENABLED)
-			Size2 wndsize = OS::get_singleton()->get_layered_buffer_size();
-			uint8_t *data = OS::get_singleton()->get_layered_buffer_data();
-			if (data) {
-				glReadPixels(0, 0, wndsize.x, wndsize.y, GL_BGRA, GL_UNSIGNED_BYTE, data);
-				OS::get_singleton()->swap_layered_buffer();
-
-				return;
-			}
-#endif
-		} else {
+		if (!OS::get_singleton()->get_window_per_pixel_transparency_enabled()) {
 			//clear alpha
 			glColorMask(false, false, false, true);
 			glClearColor(0, 0, 0, 1);
@@ -490,6 +483,42 @@ void RasterizerGLES2::make_current() {
 void RasterizerGLES2::register_config() {
 }
 
+// returns NULL if no error, or an error string
+const char *RasterizerGLES2::gl_check_for_error(bool p_print_error) {
+	GLenum err = glGetError();
+
+	const char *err_string = nullptr;
+
+	switch (err) {
+		default: {
+			// not recognised
+		} break;
+		case GL_NO_ERROR: {
+		} break;
+		case GL_INVALID_ENUM: {
+			err_string = "GL_INVALID_ENUM";
+		} break;
+		case GL_INVALID_VALUE: {
+			err_string = "GL_INVALID_VALUE";
+		} break;
+		case GL_INVALID_OPERATION: {
+			err_string = "GL_INVALID_OPERATION";
+		} break;
+		case GL_INVALID_FRAMEBUFFER_OPERATION: {
+			err_string = "GL_INVALID_FRAMEBUFFER_OPERATION";
+		} break;
+		case GL_OUT_OF_MEMORY: {
+			err_string = "GL_OUT_OF_MEMORY";
+		} break;
+	}
+
+	if (p_print_error && err_string) {
+		print_line(err_string);
+	}
+
+	return err_string;
+}
+
 RasterizerGLES2::RasterizerGLES2() {
 
 	storage = memnew(RasterizerStorageGLES2);
@@ -502,6 +531,7 @@ RasterizerGLES2::RasterizerGLES2() {
 	storage->scene = scene;
 
 	time_total = 0;
+	time_scale = 1;
 }
 
 RasterizerGLES2::~RasterizerGLES2() {

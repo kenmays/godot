@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -486,7 +486,7 @@ struct TextDocumentSyncOptions {
 	 * If present save notifications are sent to the server. If omitted the notification should not be
 	 * sent.
 	 */
-	SaveOptions save;
+	bool save = false;
 
 	Dictionary to_json() {
 		Dictionary dict;
@@ -494,7 +494,7 @@ struct TextDocumentSyncOptions {
 		dict["willSave"] = willSave;
 		dict["openClose"] = openClose;
 		dict["change"] = change;
-		dict["save"] = save.to_json();
+		dict["save"] = save;
 		return dict;
 	}
 };
@@ -1642,7 +1642,7 @@ struct ServerCapabilities {
 
 	_FORCE_INLINE_ Dictionary to_json() {
 		Dictionary dict;
-		dict["textDocumentSync"] = (int)textDocumentSync.change;
+		dict["textDocumentSync"] = textDocumentSync.to_json();
 		dict["completionProvider"] = completionProvider.to_json();
 		signatureHelpProvider.triggerCharacters.push_back(",");
 		signatureHelpProvider.triggerCharacters.push_back("(");

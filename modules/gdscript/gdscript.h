@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -73,7 +73,6 @@ class GDScript : public Script {
 	friend class GDScriptFunctions;
 	friend class GDScriptLanguage;
 
-	Variant _static_ref; //used for static call
 	Ref<GDScriptNativeClass> native;
 	Ref<GDScript> base;
 	GDScript *_base; //fast pointer access
@@ -114,6 +113,8 @@ class GDScript : public Script {
 	String fully_qualified_name;
 	SelfList<GDScript> script_list;
 
+	SelfList<GDScriptFunctionState>::List pending_func_states;
+
 	GDScriptInstance *_create_instance(const Variant **p_args, int p_argcount, Object *p_owner, bool p_isref, Variant::CallError &r_error);
 
 	void _set_subclass_path(Ref<GDScript> &p_sc, const String &p_path);
@@ -130,7 +131,7 @@ class GDScript : public Script {
 
 #endif
 
-	bool _update_exports();
+	bool _update_exports(bool *r_err = nullptr, bool p_recursive_call = false);
 
 	void _save_orphaned_subclasses();
 
@@ -235,6 +236,8 @@ class GDScriptInstance : public ScriptInstance {
 	Vector<Variant> members;
 	bool base_ref;
 
+	SelfList<GDScriptFunctionState>::List pending_func_states;
+
 	void _ml_call_reversed(GDScript *sptr, const StringName &p_method, const Variant **p_args, int p_argcount);
 
 public:
@@ -318,6 +321,8 @@ struct GDScriptWarning {
 #endif // DEBUG_ENABLED
 
 class GDScriptLanguage : public ScriptLanguage {
+
+	friend class GDScriptFunctionState;
 
 	static GDScriptLanguage *singleton;
 

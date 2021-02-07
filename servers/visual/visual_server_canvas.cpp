@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -62,6 +62,7 @@ void _collect_ysort_children(VisualServerCanvas::Item *p_canvas_item, Transform2
 				child_items[i]->ysort_xform = p_transform;
 				child_items[i]->ysort_pos = p_transform.xform(child_items[i]->xform.elements[2]);
 				child_items[i]->material_owner = child_items[i]->use_parent_material ? p_material_owner : NULL;
+				child_items[i]->ysort_index = r_index;
 			}
 
 			r_index++;
@@ -97,7 +98,12 @@ void VisualServerCanvas::_render_canvas_item(Item *p_canvas_item, const Transfor
 	}
 
 	Rect2 rect = ci->get_rect();
-	Transform2D xform = p_transform * ci->xform;
+	Transform2D xform = ci->xform;
+	if (snap_2d_transforms) {
+		xform.elements[2] = xform.elements[2].floor();
+	}
+	xform = p_transform * xform;
+
 	Rect2 global_rect = xform.xform(rect);
 	global_rect.position += p_clip_rect.position;
 
@@ -204,10 +210,7 @@ void VisualServerCanvas::_render_canvas_item(Item *p_canvas_item, const Transfor
 	}
 }
 
-void VisualServerCanvas::_light_mask_canvas_items(int p_z, RasterizerCanvas::Item *p_canvas_item, RasterizerCanvas::Light *p_masked_lights) {
-
-	if (!p_masked_lights)
-		return;
+void VisualServerCanvas::_light_mask_canvas_items(int p_z, RasterizerCanvas::Item *p_canvas_item, RasterizerCanvas::Light *p_masked_lights, int p_canvas_layer_id) {
 
 	RasterizerCanvas::Item *ci = p_canvas_item;
 
@@ -216,7 +219,7 @@ void VisualServerCanvas::_light_mask_canvas_items(int p_z, RasterizerCanvas::Ite
 		RasterizerCanvas::Light *light = p_masked_lights;
 		while (light) {
 
-			if (ci->light_mask & light->item_mask && p_z >= light->z_min && p_z <= light->z_max && ci->global_rect_cache.intersects_transformed(light->xform_cache, light->rect_cache)) {
+			if ((p_canvas_layer_id >= light->layer_min) && (p_canvas_layer_id <= light->layer_max) && (ci->light_mask & light->item_mask) && (p_z >= light->z_min) && (p_z <= light->z_max) && (ci->global_rect_cache.intersects_transformed(light->xform_cache, light->rect_cache))) {
 				ci->light_masked = true;
 			}
 
@@ -227,7 +230,7 @@ void VisualServerCanvas::_light_mask_canvas_items(int p_z, RasterizerCanvas::Ite
 	}
 }
 
-void VisualServerCanvas::render_canvas(Canvas *p_canvas, const Transform2D &p_transform, RasterizerCanvas::Light *p_lights, RasterizerCanvas::Light *p_masked_lights, const Rect2 &p_clip_rect) {
+void VisualServerCanvas::render_canvas(Canvas *p_canvas, const Transform2D &p_transform, RasterizerCanvas::Light *p_lights, RasterizerCanvas::Light *p_masked_lights, const Rect2 &p_clip_rect, int p_canvas_layer_id) {
 
 	VSG::canvas_render->canvas_begin();
 
@@ -267,7 +270,7 @@ void VisualServerCanvas::render_canvas(Canvas *p_canvas, const Transform2D &p_tr
 				continue;
 
 			if (p_masked_lights) {
-				_light_mask_canvas_items(VS::CANVAS_ITEM_Z_MIN + i, z_list[i], p_masked_lights);
+				_light_mask_canvas_items(VS::CANVAS_ITEM_Z_MIN + i, z_list[i], p_masked_lights, p_canvas_layer_id);
 			}
 
 			VSG::canvas_render->canvas_render_items(z_list[i], VS::CANVAS_ITEM_Z_MIN + i, p_canvas->modulate, p_lights, p_transform);
@@ -1479,6 +1482,7 @@ VisualServerCanvas::VisualServerCanvas() {
 	z_last_list = (RasterizerCanvas::Item **)memalloc(z_range * sizeof(RasterizerCanvas::Item *));
 
 	disable_scale = false;
+	snap_2d_transforms = Engine::get_singleton()->get_snap_2d_transforms();
 }
 
 VisualServerCanvas::~VisualServerCanvas() {

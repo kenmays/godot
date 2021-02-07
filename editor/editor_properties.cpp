@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -70,7 +70,9 @@ void EditorPropertyText::_text_changed(const String &p_string) {
 void EditorPropertyText::update_property() {
 	String s = get_edited_object()->get(get_edited_property());
 	updating = true;
-	text->set_text(s);
+	if (text->get_text() != s) {
+		text->set_text(s);
+	}
 	text->set_editable(!is_read_only());
 	updating = false;
 }
@@ -125,9 +127,11 @@ void EditorPropertyMultilineText::_open_big_text() {
 
 void EditorPropertyMultilineText::update_property() {
 	String t = get_edited_object()->get(get_edited_property());
-	text->set_text(t);
-	if (big_text && big_text->is_visible_in_tree()) {
-		big_text->set_text(t);
+	if (text->get_text() != t) {
+		text->set_text(t);
+		if (big_text && big_text->is_visible_in_tree()) {
+			big_text->set_text(t);
+		}
 	}
 }
 
@@ -610,6 +614,7 @@ public:
 	Vector<Rect2> flag_rects;
 	Vector<String> names;
 	Vector<String> tooltips;
+	int hovered_index;
 
 	virtual Size2 get_minimum_size() const {
 		Ref<Font> font = get_font("font", "Label");
@@ -625,57 +630,79 @@ public:
 		return String();
 	}
 	void _gui_input(const Ref<InputEvent> &p_ev) {
-		Ref<InputEventMouseButton> mb = p_ev;
-		if (mb.is_valid() && mb->get_button_index() == BUTTON_LEFT && mb->is_pressed()) {
+		const Ref<InputEventMouseMotion> mm = p_ev;
+
+		if (mm.is_valid()) {
 			for (int i = 0; i < flag_rects.size(); i++) {
-				if (flag_rects[i].has_point(mb->get_position())) {
-					//toggle
-					if (value & (1 << i)) {
-						value &= ~(1 << i);
-					} else {
-						value |= (1 << i);
-					}
-					emit_signal("flag_changed", value);
+				if (flag_rects[i].has_point(mm->get_position())) {
+					// Used to highlight the hovered flag in the layers grid.
+					hovered_index = i;
 					update();
+					break;
 				}
 			}
+		}
+
+		const Ref<InputEventMouseButton> mb = p_ev;
+
+		if (mb.is_valid() && mb->get_button_index() == BUTTON_LEFT && mb->is_pressed() && hovered_index >= 0) {
+			// Toggle the flag.
+			// We base our choice on the hovered flag, so that it always matches the hovered flag.
+			if (value & (1 << hovered_index)) {
+				value &= ~(1 << hovered_index);
+			} else {
+				value |= (1 << hovered_index);
+			}
+
+			emit_signal("flag_changed", value);
+			update();
 		}
 	}
 
 	void _notification(int p_what) {
-		if (p_what == NOTIFICATION_DRAW) {
+		switch (p_what) {
+			case NOTIFICATION_DRAW: {
+				Rect2 rect;
+				rect.size = get_size();
+				flag_rects.clear();
 
-			Rect2 rect;
-			rect.size = get_size();
-			flag_rects.clear();
+				const int bsize = (rect.size.height * 80 / 100) / 2;
+				const int h = bsize * 2 + 1;
+				const int vofs = (rect.size.height - h) / 2;
 
-			int bsize = (rect.size.height * 80 / 100) / 2;
+				Color color = get_color("highlight_color", "Editor");
+				for (int i = 0; i < 2; i++) {
+					Point2 ofs(4, vofs);
+					if (i == 1)
+						ofs.y += bsize + 1;
 
-			int h = bsize * 2 + 1;
-			int vofs = (rect.size.height - h) / 2;
+					ofs += rect.position;
+					for (int j = 0; j < 10; j++) {
+						Point2 o = ofs + Point2(j * (bsize + 1), 0);
+						if (j >= 5)
+							o.x += 1;
 
-			Color color = get_color("highlight_color", "Editor");
-			for (int i = 0; i < 2; i++) {
+						const int idx = i * 10 + j;
+						const bool on = value & (1 << idx);
+						Rect2 rect2 = Rect2(o, Size2(bsize, bsize));
 
-				Point2 ofs(4, vofs);
-				if (i == 1)
-					ofs.y += bsize + 1;
+						color.a = on ? 0.6 : 0.2;
+						if (idx == hovered_index) {
+							// Add visual feedback when hovering a flag.
+							color.a += 0.15;
+						}
 
-				ofs += rect.position;
-				for (int j = 0; j < 10; j++) {
-
-					Point2 o = ofs + Point2(j * (bsize + 1), 0);
-					if (j >= 5)
-						o.x += 1;
-
-					uint32_t idx = i * 10 + j;
-					bool on = value & (1 << idx);
-					Rect2 rect2 = Rect2(o, Size2(bsize, bsize));
-					color.a = on ? 0.6 : 0.2;
-					draw_rect(rect2, color);
-					flag_rects.push_back(rect2);
+						draw_rect(rect2, color);
+						flag_rects.push_back(rect2);
+					}
 				}
-			}
+			} break;
+			case NOTIFICATION_MOUSE_EXIT: {
+				hovered_index = -1;
+				update();
+			} break;
+			default:
+				break;
 		}
 	}
 
@@ -692,6 +719,7 @@ public:
 
 	EditorPropertyLayersGrid() {
 		value = 0;
+		hovered_index = -1; // Nothing is hovered.
 	}
 };
 void EditorPropertyLayers::_grid_changed(uint32_t p_grid) {
@@ -792,7 +820,7 @@ EditorPropertyLayers::EditorPropertyLayers() {
 	hb->add_child(grid);
 	button = memnew(Button);
 	button->set_toggle_mode(true);
-	button->set_text("..");
+	button->set_text("...");
 	button->connect("pressed", this, "_button_pressed");
 	hb->add_child(button);
 	set_bottom_editor(hb);
@@ -963,18 +991,26 @@ void EditorPropertyEasing::_drag_easing(const Ref<InputEvent> &p_ev) {
 			rel = -rel;
 
 		float val = get_edited_object()->get(get_edited_property());
-		if (val == 0)
-			return;
 		bool sg = val < 0;
 		val = Math::absf(val);
 
 		val = Math::log(val) / Math::log((float)2.0);
-		//logspace
+		// Logarithmic space.
 		val += rel * 0.05;
 
 		val = Math::pow(2.0f, val);
 		if (sg)
 			val = -val;
+
+		// 0 is a singularity, but both positive and negative values
+		// are otherwise allowed. Enforce 0+ as workaround.
+		if (Math::is_zero_approx(val)) {
+			val = 0.00001;
+		}
+
+		// Limit to a reasonable value to prevent the curve going into infinity,
+		// which can cause crashes and other issues.
+		val = CLAMP(val, -1000000, 1000000);
 
 		emit_changed(get_edited_property(), val);
 		easing_draw->update();
@@ -1020,7 +1056,18 @@ void EditorPropertyEasing::_draw_easing() {
 	}
 
 	easing_draw->draw_multiline(lines, line_color, 1.0, true);
-	f->draw(ci, Point2(10, 10 + f->get_ascent()), String::num(exp, 2), font_color);
+	// Draw more decimals for small numbers since higher precision is usually required for fine adjustments.
+	int decimals;
+	if (Math::abs(exp) < 0.1 - CMP_EPSILON) {
+		decimals = 4;
+	} else if (Math::abs(exp) < 1 - CMP_EPSILON) {
+		decimals = 3;
+	} else if (Math::abs(exp) < 10 - CMP_EPSILON) {
+		decimals = 2;
+	} else {
+		decimals = 1;
+	}
+	f->draw(ci, Point2(10, 10 + f->get_ascent()), rtos(exp).pad_decimals(decimals), font_color);
 }
 
 void EditorPropertyEasing::update_property() {
@@ -1051,6 +1098,11 @@ void EditorPropertyEasing::_spin_value_changed(double p_value) {
 	if (Math::is_zero_approx(p_value)) {
 		p_value = 0.00001;
 	}
+
+	// Limit to a reasonable value to prevent the curve going into infinity,
+	// which can cause crashes and other issues.
+	p_value = CLAMP(p_value, -1000000, 1000000);
+
 	emit_changed(get_edited_property(), p_value);
 	_spin_focus_exited();
 }
@@ -1861,13 +1913,18 @@ EditorPropertyTransform::EditorPropertyTransform() {
 ////////////// COLOR PICKER //////////////////////
 
 void EditorPropertyColor::_color_changed(const Color &p_color) {
+	// Cancel the color change if the current color is identical to the new one.
+	if (get_edited_object()->get(get_edited_property()) == p_color) {
+		return;
+	}
 
 	emit_changed(get_edited_property(), p_color, "", true);
 }
 
 void EditorPropertyColor::_popup_closed() {
-
-	emit_changed(get_edited_property(), picker->get_pick_color(), "", false);
+	if (picker->get_pick_color() != last_color) {
+		emit_changed(get_edited_property(), picker->get_pick_color(), "", false);
+	}
 }
 
 void EditorPropertyColor::_picker_created() {
@@ -1879,11 +1936,16 @@ void EditorPropertyColor::_picker_created() {
 		picker->get_picker()->set_raw_mode(true);
 }
 
+void EditorPropertyColor::_picker_opening() {
+	last_color = picker->get_pick_color();
+}
+
 void EditorPropertyColor::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("_color_changed"), &EditorPropertyColor::_color_changed);
 	ClassDB::bind_method(D_METHOD("_popup_closed"), &EditorPropertyColor::_popup_closed);
 	ClassDB::bind_method(D_METHOD("_picker_created"), &EditorPropertyColor::_picker_created);
+	ClassDB::bind_method(D_METHOD("_picker_opening"), &EditorPropertyColor::_picker_opening);
 }
 
 void EditorPropertyColor::update_property() {
@@ -1920,6 +1982,7 @@ EditorPropertyColor::EditorPropertyColor() {
 	picker->connect("color_changed", this, "_color_changed");
 	picker->connect("popup_closed", this, "_popup_closed");
 	picker->connect("picker_created", this, "_picker_created");
+	picker->get_popup()->connect("about_to_show", this, "_picker_opening");
 }
 
 ////////////// NODE PATH //////////////////////
@@ -2297,14 +2360,14 @@ void EditorPropertyResource::_menu_option(int p_which) {
 				return;
 			}
 
-			Object *obj = NULL;
+			Variant obj;
 
 			if (ScriptServer::is_global_class(intype)) {
 				obj = ClassDB::instance(ScriptServer::get_global_class_native_base(intype));
 				if (obj) {
 					Ref<Script> script = ResourceLoader::load(ScriptServer::get_global_class_path(intype));
 					if (script.is_valid()) {
-						obj->set_script(Variant(script));
+						((Object *)obj)->set_script(script.get_ref_ptr());
 					}
 				}
 			} else {
@@ -2315,7 +2378,6 @@ void EditorPropertyResource::_menu_option(int p_which) {
 				obj = EditorNode::get_editor_data().instance_custom_type(intype, "Resource");
 			}
 
-			ERR_BREAK(!obj);
 			Resource *resp = Object::cast_to<Resource>(obj);
 			ERR_BREAK(!resp);
 			if (get_edited_object() && base_type != String() && base_type == "Script") {
@@ -2323,7 +2385,7 @@ void EditorPropertyResource::_menu_option(int p_which) {
 				resp->call("set_instance_base_type", get_edited_object()->get_class());
 			}
 
-			res = Ref<Resource>(resp);
+			res = RES(resp);
 			emit_changed(get_edited_property(), res);
 			update_property();
 
@@ -2788,8 +2850,16 @@ bool EditorPropertyResource::_is_drop_valid(const Dictionary &p_drag_data) const
 	String allowed_type = base_type;
 
 	Dictionary drag_data = p_drag_data;
-	if (drag_data.has("type") && String(drag_data["type"]) == "resource") {
-		Ref<Resource> res = drag_data["resource"];
+
+	Ref<Resource> res;
+	if (drag_data.has("type") && String(drag_data["type"]) == "script_list_element") {
+		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(drag_data["script_list_element"]);
+		res = se->get_edited_resource();
+	} else if (drag_data.has("type") && String(drag_data["type"]) == "resource") {
+		res = drag_data["resource"];
+	}
+
+	if (res.is_valid()) {
 		for (int i = 0; i < allowed_type.get_slice_count(","); i++) {
 			String at = allowed_type.get_slice(",", i).strip_edges();
 			if (res.is_valid() && ClassDB::is_parent_class(res->get_class(), at)) {
@@ -2830,13 +2900,19 @@ void EditorPropertyResource::drop_data_fw(const Point2 &p_point, const Variant &
 	ERR_FAIL_COND(!_is_drop_valid(p_data));
 
 	Dictionary drag_data = p_data;
-	if (drag_data.has("type") && String(drag_data["type"]) == "resource") {
-		Ref<Resource> res = drag_data["resource"];
-		if (res.is_valid()) {
-			emit_changed(get_edited_property(), res);
-			update_property();
-			return;
-		}
+
+	Ref<Resource> res;
+	if (drag_data.has("type") && String(drag_data["type"]) == "script_list_element") {
+		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(drag_data["script_list_element"]);
+		res = se->get_edited_resource();
+	} else if (drag_data.has("type") && String(drag_data["type"]) == "resource") {
+		res = drag_data["resource"];
+	}
+
+	if (res.is_valid()) {
+		emit_changed(get_edited_property(), res);
+		update_property();
+		return;
 	}
 
 	if (drag_data.has("type") && String(drag_data["type"]) == "files") {
@@ -2845,9 +2921,9 @@ void EditorPropertyResource::drop_data_fw(const Point2 &p_point, const Variant &
 
 		if (files.size() == 1) {
 			String file = files[0];
-			RES res = ResourceLoader::load(file);
-			if (res.is_valid()) {
-				emit_changed(get_edited_property(), res);
+			RES file_res = ResourceLoader::load(file);
+			if (file_res.is_valid()) {
+				emit_changed(get_edited_property(), file_res);
 				update_property();
 				return;
 			}

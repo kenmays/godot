@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -87,12 +87,6 @@ private:
 
 	StringName editor_icons;
 
-	Tree *patches;
-	Button *patch_export;
-	int patch_index;
-	EditorFileDialog *patch_dialog;
-	ConfirmationDialog *patch_erase;
-
 	Button *export_button;
 	Button *export_all_button;
 	AcceptDialog *export_all_dialog;
@@ -109,9 +103,6 @@ private:
 
 	String default_filename;
 
-	void _patch_selected(const String &p_path);
-	void _patch_deleted();
-
 	void _runnable_pressed();
 	void _update_parameters(const String &p_edited_property);
 	void _name_changed(const String &p_string);
@@ -123,6 +114,7 @@ private:
 	void _delete_preset_confirm();
 	void _update_export_all();
 
+	void _force_update_current_preset_parameters();
 	void _update_current_preset();
 	void _update_presets();
 
@@ -131,9 +123,8 @@ private:
 	void _fill_resource_tree();
 	bool _fill_tree(EditorFileSystemDirectory *p_dir, TreeItem *p_item, Ref<EditorExportPreset> &current, bool p_only_scenes);
 	void _tree_changed();
-
-	void _patch_button_pressed(Object *p_item, int p_column, int p_id);
-	void _patch_edited();
+	void _check_dir_recursive(TreeItem *p_dir, bool p_checked);
+	void _refresh_parent_checks(TreeItem *p_item);
 
 	Variant get_drag_data_fw(const Point2 &p_point, Control *p_from);
 	bool can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) const;

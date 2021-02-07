@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,7 +32,7 @@
 #include "core/list.h"
 #include "core/print_string.h"
 
-BroadPhaseSW::ID BroadPhaseBasic::create(CollisionObjectSW *p_object, int p_subindex) {
+BroadPhaseSW::ID BroadPhaseBasic::create(CollisionObjectSW *p_object, int p_subindex, const AABB &p_aabb) {
 
 	ERR_FAIL_COND_V(p_object == NULL, 0);
 
@@ -202,9 +202,12 @@ void BroadPhaseBasic::update() {
 			if (pair_ok && !E) {
 
 				void *data = NULL;
-				if (pair_callback)
+				if (pair_callback) {
 					data = pair_callback(elem_A->owner, elem_A->subindex, elem_B->owner, elem_B->subindex, unpair_userdata);
-				pair_map.insert(key, data);
+					if (data) {
+						pair_map.insert(key, data);
+					}
+				}
 			}
 		}
 	}

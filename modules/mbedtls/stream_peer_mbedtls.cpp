@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,11 +32,6 @@
 
 #include "core/io/stream_peer_tcp.h"
 #include "core/os/file_access.h"
-
-void _print_error(int ret) {
-	printf("mbedtls error: returned -0x%x\n\n", -ret);
-	fflush(stdout);
-}
 
 int StreamPeerMbedTLS::bio_send(void *ctx, const unsigned char *buf, size_t len) {
 
@@ -88,8 +83,8 @@ Error StreamPeerMbedTLS::_do_handshake() {
 	while ((ret = mbedtls_ssl_handshake(ssl_ctx->get_context())) != 0) {
 		if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
 			// An error occurred.
-			ERR_PRINTS("TLS handshake error: " + itos(ret));
-			_print_error(ret);
+			ERR_PRINT("TLS handshake error: " + itos(ret));
+			SSLContextMbedTLS::print_mbedtls_error(ret);
 			disconnect_from_stream();
 			status = STATUS_ERROR;
 			return FAILED;
@@ -188,7 +183,7 @@ Error StreamPeerMbedTLS::put_partial_data(const uint8_t *p_data, int p_bytes, in
 		disconnect_from_stream();
 		return ERR_FILE_EOF;
 	} else if (ret <= 0) {
-		_print_error(ret);
+		SSLContextMbedTLS::print_mbedtls_error(ret);
 		disconnect_from_stream();
 		return ERR_CONNECTION_ERROR;
 	}
@@ -233,7 +228,7 @@ Error StreamPeerMbedTLS::get_partial_data(uint8_t *p_buffer, int p_bytes, int &r
 		disconnect_from_stream();
 		return ERR_FILE_EOF;
 	} else if (ret <= 0) {
-		_print_error(ret);
+		SSLContextMbedTLS::print_mbedtls_error(ret);
 		disconnect_from_stream();
 		return ERR_CONNECTION_ERROR;
 	}
@@ -264,7 +259,7 @@ void StreamPeerMbedTLS::poll() {
 		disconnect_from_stream();
 		return;
 	} else if (ret < 0) {
-		_print_error(ret);
+		SSLContextMbedTLS::print_mbedtls_error(ret);
 		disconnect_from_stream();
 		return;
 	}

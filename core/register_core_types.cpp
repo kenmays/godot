@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -40,12 +40,14 @@
 #include "core/func_ref.h"
 #include "core/input_map.h"
 #include "core/io/config_file.h"
+#include "core/io/dtls_server.h"
 #include "core/io/http_client.h"
 #include "core/io/image_loader.h"
 #include "core/io/marshalls.h"
 #include "core/io/multiplayer_api.h"
 #include "core/io/networked_multiplayer_peer.h"
 #include "core/io/packet_peer.h"
+#include "core/io/packet_peer_dtls.h"
 #include "core/io/packet_peer_udp.h"
 #include "core/io/pck_packer.h"
 #include "core/io/resource_format_binary.h"
@@ -53,6 +55,7 @@
 #include "core/io/stream_peer_ssl.h"
 #include "core/io/tcp_server.h"
 #include "core/io/translation_loader_po.h"
+#include "core/io/udp_server.h"
 #include "core/io/xml_parser.h"
 #include "core/math/a_star.h"
 #include "core/math/expression.h"
@@ -155,6 +158,9 @@ void register_core_types() {
 	ClassDB::register_class<StreamPeerTCP>();
 	ClassDB::register_class<TCP_Server>();
 	ClassDB::register_class<PacketPeerUDP>();
+	ClassDB::register_class<UDPServer>();
+	ClassDB::register_custom_instance_class<PacketPeerDTLS>();
+	ClassDB::register_custom_instance_class<DTLSServer>();
 
 	// Crypto
 	ClassDB::register_class<HashingContext>();
@@ -222,7 +228,7 @@ void register_core_types() {
 }
 
 void register_core_settings() {
-	//since in register core types, globals may not e present
+	// Since in register core types, globals may not be present.
 	GLOBAL_DEF("network/limits/tcp/connect_timeout_seconds", (30));
 	ProjectSettings::get_singleton()->set_custom_property_info("network/limits/tcp/connect_timeout_seconds", PropertyInfo(Variant::INT, "network/limits/tcp/connect_timeout_seconds", PROPERTY_HINT_RANGE, "1,1800,1"));
 	GLOBAL_DEF_RST("network/limits/packet_peer_stream/max_buffer_po2", (16));

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -534,6 +534,7 @@ struct _VariantCall {
 	VCALL_LOCALMEM0R(Array, pop_back);
 	VCALL_LOCALMEM0R(Array, pop_front);
 	VCALL_LOCALMEM1(Array, append);
+	VCALL_LOCALMEM1(Array, append_array);
 	VCALL_LOCALMEM1(Array, resize);
 	VCALL_LOCALMEM2(Array, insert);
 	VCALL_LOCALMEM1(Array, remove);
@@ -743,6 +744,7 @@ struct _VariantCall {
 #define VCALL_PTR5R(m_type, m_method) \
 	static void _call_##m_type##_##m_method(Variant &r_ret, Variant &p_self, const Variant **p_args) { r_ret = reinterpret_cast<m_type *>(p_self._data._ptr)->m_method(*p_args[0], *p_args[1], *p_args[2], *p_args[3], *p_args[4]); }
 
+	VCALL_PTR0R(AABB, abs);
 	VCALL_PTR0R(AABB, get_area);
 	VCALL_PTR0R(AABB, has_no_area);
 	VCALL_PTR0R(AABB, has_no_surface);
@@ -824,6 +826,18 @@ struct _VariantCall {
 	VCALL_PTR1R(Basis, scaled);
 	VCALL_PTR0R(Basis, get_scale);
 	VCALL_PTR0R(Basis, get_euler);
+	VCALL_PTR0R(Basis, get_euler_xyz);
+	VCALL_PTR1(Basis, set_euler_xyz);
+	VCALL_PTR0R(Basis, get_euler_xzy);
+	VCALL_PTR1(Basis, set_euler_xzy);
+	VCALL_PTR0R(Basis, get_euler_yzx);
+	VCALL_PTR1(Basis, set_euler_yzx);
+	VCALL_PTR0R(Basis, get_euler_yxz);
+	VCALL_PTR1(Basis, set_euler_yxz);
+	VCALL_PTR0R(Basis, get_euler_zxy);
+	VCALL_PTR1(Basis, set_euler_zxy);
+	VCALL_PTR0R(Basis, get_euler_zyx);
+	VCALL_PTR1(Basis, set_euler_zyx);
 	VCALL_PTR1R(Basis, tdotx);
 	VCALL_PTR1R(Basis, tdoty);
 	VCALL_PTR1R(Basis, tdotz);
@@ -1061,6 +1075,9 @@ struct _VariantCall {
 		List<StringName> value_ordered;
 #endif
 		Map<StringName, Variant> variant_value;
+#ifdef DEBUG_ENABLED
+		List<StringName> variant_value_ordered;
+#endif
 	};
 
 	static ConstantData *constant_data;
@@ -1076,6 +1093,9 @@ struct _VariantCall {
 	static void add_variant_constant(int p_type, StringName p_constant_name, const Variant &p_constant_value) {
 
 		constant_data[p_type].variant_value[p_constant_name] = p_constant_value;
+#ifdef DEBUG_ENABLED
+		constant_data[p_type].variant_value_ordered.push_back(p_constant_name);
+#endif
 	}
 };
 
@@ -1201,7 +1221,7 @@ Variant Variant::construct(const Variant::Type p_type, const Variant **p_args, i
 				return (int64_t(*p_args[0]));
 			}
 			case REAL: {
-				return real_t(*p_args[0]);
+				return double(*p_args[0]);
 			}
 			case STRING: {
 				return String(*p_args[0]);
@@ -1211,6 +1231,8 @@ Variant Variant::construct(const Variant::Type p_type, const Variant **p_args, i
 			}
 			case RECT2: return (Rect2(*p_args[0]));
 			case VECTOR3: return (Vector3(*p_args[0]));
+			case TRANSFORM2D:
+				return (Transform2D(p_args[0]->operator Transform2D()));
 			case PLANE: return (Plane(*p_args[0]));
 			case QUAT: return (p_args[0]->operator Quat());
 			case AABB:
@@ -1439,9 +1461,14 @@ void Variant::get_constants_for_type(Variant::Type p_type, List<StringName> *p_c
 #endif
 	}
 
+#ifdef DEBUG_ENABLED
+	for (List<StringName>::Element *E = cd.variant_value_ordered.front(); E; E = E->next()) {
+		p_constants->push_back(E->get());
+#else
 	for (Map<StringName, Variant>::Element *E = cd.variant_value.front(); E; E = E->next()) {
 
 		p_constants->push_back(E->key());
+#endif
 	}
 }
 
@@ -1773,6 +1800,7 @@ void register_variant_methods() {
 	ADDFUNC1NC(ARRAY, NIL, Array, push_back, NIL, "value", varray());
 	ADDFUNC1NC(ARRAY, NIL, Array, push_front, NIL, "value", varray());
 	ADDFUNC1NC(ARRAY, NIL, Array, append, NIL, "value", varray());
+	ADDFUNC1NC(ARRAY, NIL, Array, append_array, ARRAY, "array", varray());
 	ADDFUNC1NC(ARRAY, NIL, Array, resize, INT, "size", varray());
 	ADDFUNC2NC(ARRAY, NIL, Array, insert, INT, "position", NIL, "value", varray());
 	ADDFUNC1NC(ARRAY, NIL, Array, remove, INT, "position", varray());
@@ -1884,6 +1912,7 @@ void register_variant_methods() {
 
 	//pointerbased
 
+	ADDFUNC0R(AABB, AABB, AABB, abs, varray());
 	ADDFUNC0R(AABB, REAL, AABB, get_area, varray());
 	ADDFUNC0R(AABB, BOOL, AABB, has_no_area, varray());
 	ADDFUNC0R(AABB, BOOL, AABB, has_no_surface, varray());

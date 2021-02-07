@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -306,6 +306,7 @@ private:
 
 	List<TextOperation> undo_stack;
 	List<TextOperation>::Element *undo_stack_pos;
+	int undo_stack_max_size;
 
 	void _clear_redo();
 	void _do_text_op(const TextOperation &p_op, bool p_reverse);
@@ -433,6 +434,8 @@ private:
 
 	bool context_menu_enabled;
 	bool shortcut_keys_enabled;
+
+	bool virtual_keyboard_enabled = true;
 
 	int executing_line;
 
@@ -816,6 +819,9 @@ public:
 
 	void set_shortcut_keys_enabled(bool p_enabled);
 	bool is_shortcut_keys_enabled() const;
+
+	void set_virtual_keyboard_enabled(bool p_enable);
+	bool is_virtual_keyboard_enabled() const;
 
 	PopupMenu *get_menu() const;
 

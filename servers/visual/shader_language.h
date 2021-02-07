@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -512,6 +512,7 @@ public:
 	struct ShaderNode : public Node {
 
 		struct Constant {
+			StringName name;
 			DataType type;
 			DataPrecision precision;
 			ConstantNode *initializer;
@@ -577,6 +578,7 @@ public:
 		Vector<StringName> render_modes;
 
 		Vector<Function> functions;
+		Vector<Constant> vconstants;
 
 		ShaderNode() :
 				Node(TYPE_SHADER) {}
@@ -759,6 +761,7 @@ private:
 	Node *_parse_and_reduce_expression(BlockNode *p_block, const Map<StringName, BuiltInInfo> &p_builtin_types);
 	Error _parse_block(BlockNode *p_block, const Map<StringName, BuiltInInfo> &p_builtin_types, bool p_just_one = false, bool p_can_break = false, bool p_can_continue = false);
 	String _get_shader_type_list(const Set<String> &p_shader_types) const;
+	String _get_qualifier_str(ArgumentQualifier p_qualifier) const;
 
 	Error _parse_shader(const Map<StringName, FunctionInfo> &p_functions, const Vector<StringName> &p_render_modes, const Set<String> &p_shader_types);
 

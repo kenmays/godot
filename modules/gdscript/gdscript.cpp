@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -390,9 +390,14 @@ void GDScript::_update_exports_values(Map<StringName, Variant> &values, List<Pro
 }
 #endif
 
-bool GDScript::_update_exports() {
+bool GDScript::_update_exports(bool *r_err, bool p_recursive_call) {
 
 #ifdef TOOLS_ENABLED
+
+	static Vector<GDScript *> base_caches;
+	if (!p_recursive_call)
+		base_caches.clear();
+	base_caches.push_back(this);
 
 	bool changed = false;
 
@@ -487,7 +492,22 @@ bool GDScript::_update_exports() {
 	placeholder_fallback_enabled = false;
 
 	if (base_cache.is_valid() && base_cache->is_valid()) {
-		if (base_cache->_update_exports()) {
+		for (int i = 0; i < base_caches.size(); i++) {
+			if (base_caches[i] == base_cache.ptr()) {
+				if (r_err)
+					*r_err = true;
+				valid = false; // to show error in the editor
+				base_cache->valid = false;
+				base_cache->inheriters_cache.clear(); // to prevent future stackoverflows
+				base_cache.unref();
+				base.unref();
+				_base = nullptr;
+				ERR_FAIL_V_MSG(false, "Cyclic inheritance in script class.");
+			}
+		}
+		if (base_cache->_update_exports(r_err, true)) {
+			if (r_err && *r_err)
+				return false;
 			changed = true;
 		}
 	}
@@ -515,7 +535,10 @@ void GDScript::update_exports() {
 
 #ifdef TOOLS_ENABLED
 
-	_update_exports();
+	bool cyclic_error = false;
+	_update_exports(&cyclic_error);
+	if (cyclic_error)
+		return;
 
 	Set<ObjectID> copy = inheriters_cache; //might get modified
 
@@ -891,7 +914,6 @@ void GDScript::get_script_signal_list(List<MethodInfo> *r_signals) const {
 GDScript::GDScript() :
 		script_list(this) {
 
-	_static_ref = this;
 	valid = false;
 	subclass_count = 0;
 	initializer = NULL;
@@ -947,6 +969,20 @@ void GDScript::_save_orphaned_subclasses() {
 }
 
 GDScript::~GDScript() {
+
+	if (GDScriptLanguage::get_singleton()->lock) {
+		GDScriptLanguage::get_singleton()->lock->lock();
+	}
+	while (SelfList<GDScriptFunctionState> *E = pending_func_states.first()) {
+		// Order matters since clearing the stack may already cause
+		// the GDSCriptFunctionState to be destroyed and thus removed from the list.
+		pending_func_states.remove(E);
+		E->self()->_clear_stack();
+	}
+	if (GDScriptLanguage::get_singleton()->lock) {
+		GDScriptLanguage::get_singleton()->lock->unlock();
+	}
+
 	for (Map<StringName, GDScriptFunction *>::Element *E = member_functions.front(); E; E = E->next()) {
 		memdelete(E->get());
 	}
@@ -1364,16 +1400,24 @@ GDScriptInstance::GDScriptInstance() {
 }
 
 GDScriptInstance::~GDScriptInstance() {
-	if (script.is_valid() && owner) {
 #ifndef NO_THREADS
-		GDScriptLanguage::singleton->lock->lock();
+	GDScriptLanguage::singleton->lock->lock();
 #endif
 
-		script->instances.erase(owner);
-#ifndef NO_THREADS
-		GDScriptLanguage::singleton->lock->unlock();
-#endif
+	while (SelfList<GDScriptFunctionState> *E = pending_func_states.first()) {
+		// Order matters since clearing the stack may already cause
+		// the GDSCriptFunctionState to be destroyed and thus removed from the list.
+		pending_func_states.remove(E);
+		E->self()->_clear_stack();
 	}
+
+	if (script.is_valid() && owner) {
+		script->instances.erase(owner);
+	}
+
+#ifndef NO_THREADS
+	GDScriptLanguage::singleton->lock->unlock();
+#endif
 }
 
 /************* SCRIPT LANGUAGE **************/
@@ -2083,7 +2127,8 @@ String GDScriptWarning::get_message() const {
 		case STANDALONE_TERNARY: {
 			return "Standalone ternary conditional operator: the return value is being discarded.";
 		}
-		case WARNING_MAX: break; // Can't happen, but silences warning
+		case WARNING_MAX:
+			break; // Can't happen, but silences warning
 	}
 	ERR_FAIL_V_MSG(String(), "Invalid GDScript warning code: " + get_name_from_code(code) + ".");
 
@@ -2202,6 +2247,32 @@ GDScriptLanguage::~GDScriptLanguage() {
 	if (_call_stack) {
 		memdelete_arr(_call_stack);
 	}
+
+	// Clear dependencies between scripts, to ensure cyclic references are broken (to avoid leaks at exit).
+	SelfList<GDScript> *s = script_list.first();
+	while (s) {
+		GDScript *script = s->self();
+		// This ensures the current script is not released before we can check what's the next one
+		// in the list (we can't get the next upfront because we don't know if the reference breaking
+		// will cause it -or any other after it, for that matter- to be released so the next one
+		// is not the same as before).
+		script->reference();
+
+		for (Map<StringName, GDScriptFunction *>::Element *E = script->member_functions.front(); E; E = E->next()) {
+			GDScriptFunction *func = E->get();
+			for (int i = 0; i < func->argument_types.size(); i++) {
+				func->argument_types.write[i].script_type_ref = Ref<Script>();
+			}
+			func->return_type.script_type_ref = Ref<Script>();
+		}
+		for (Map<StringName, GDScript::MemberInfo>::Element *E = script->member_indices.front(); E; E = E->next()) {
+			E->get().data_type.script_type_ref = Ref<Script>();
+		}
+
+		s = s->next();
+		script->unreference();
+	}
+
 	singleton = NULL;
 }
 

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -124,7 +124,6 @@ private:
 		FILE_SAVE_SCENE,
 		FILE_SAVE_AS_SCENE,
 		FILE_SAVE_ALL_SCENES,
-		FILE_SAVE_BEFORE_RUN,
 		FILE_SAVE_AND_RUN,
 		FILE_SHOW_IN_FILESYSTEM,
 		FILE_IMPORT_SUBSCENE,
@@ -150,7 +149,7 @@ private:
 		FILE_EXTERNAL_OPEN_SCENE,
 		EDIT_UNDO,
 		EDIT_REDO,
-		EDIT_REVERT,
+		EDIT_RELOAD_SAVED_SCENE,
 		TOOLS_ORPHAN_RESOURCES,
 		TOOLS_CUSTOM,
 		RESOURCE_SAVE,
@@ -685,13 +684,15 @@ public:
 	static void add_editor_plugin(EditorPlugin *p_editor, bool p_config_changed = false);
 	static void remove_editor_plugin(EditorPlugin *p_editor, bool p_config_changed = false);
 
+	static void disambiguate_filenames(const Vector<String> p_full_paths, Vector<String> &r_filenames);
+
 	void new_inherited_scene() { _menu_option_confirm(FILE_NEW_INHERITED_SCENE, false); }
 
 	void set_docks_visible(bool p_show);
 	bool get_docks_visible() const;
 
 	void set_distraction_free_mode(bool p_enter);
-	bool get_distraction_free_mode() const;
+	bool is_distraction_free_mode_enabled() const;
 
 	void add_control_to_dock(DockSlot p_slot, Control *p_control);
 	void remove_control_from_dock(Control *p_control);
@@ -862,7 +863,11 @@ public:
 	bool ensure_main_scene(bool p_from_native);
 
 	void run_play();
+	void run_play_current();
+	void run_play_custom(const String &p_custom);
 	void run_stop();
+	bool is_run_playing() const;
+	String get_run_playing_scene() const;
 };
 
 struct EditorProgress {

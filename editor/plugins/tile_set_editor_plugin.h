@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -201,6 +201,7 @@ private:
 	void _on_workspace_overlay_draw();
 	void _on_workspace_draw();
 	void _on_workspace_process();
+	void _on_scroll_container_input(const Ref<InputEvent> &p_event);
 	void _on_workspace_input(const Ref<InputEvent> &p_ie);
 	void _on_tool_clicked(int p_tool);
 	void _on_priority_changed(float val);
