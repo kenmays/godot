@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,16 +31,14 @@
 #include "mesh_instance_2d.h"
 
 void MeshInstance2D::_notification(int p_what) {
-
 	if (p_what == NOTIFICATION_DRAW) {
 		if (mesh.is_valid()) {
-			draw_mesh(mesh, texture, normal_map);
+			draw_mesh(mesh, texture);
 		}
 	}
 }
 
 void MeshInstance2D::_bind_methods() {
-
 	ClassDB::bind_method(D_METHOD("set_mesh", "mesh"), &MeshInstance2D::set_mesh);
 	ClassDB::bind_method(D_METHOD("get_mesh"), &MeshInstance2D::get_mesh);
 
@@ -58,20 +56,18 @@ void MeshInstance2D::_bind_methods() {
 }
 
 void MeshInstance2D::set_mesh(const Ref<Mesh> &p_mesh) {
-
 	mesh = p_mesh;
 	update();
 }
 
 Ref<Mesh> MeshInstance2D::get_mesh() const {
-
 	return mesh;
 }
 
 void MeshInstance2D::set_texture(const Ref<Texture2D> &p_texture) {
-
-	if (p_texture == texture)
+	if (p_texture == texture) {
 		return;
+	}
 	texture = p_texture;
 	update();
 	emit_signal("texture_changed");
@@ -79,24 +75,20 @@ void MeshInstance2D::set_texture(const Ref<Texture2D> &p_texture) {
 }
 
 void MeshInstance2D::set_normal_map(const Ref<Texture2D> &p_texture) {
-
 	normal_map = p_texture;
 	update();
 }
 
 Ref<Texture2D> MeshInstance2D::get_normal_map() const {
-
 	return normal_map;
 }
 
 Ref<Texture2D> MeshInstance2D::get_texture() const {
-
 	return texture;
 }
 
 #ifdef TOOLS_ENABLED
 Rect2 MeshInstance2D::_edit_get_rect() const {
-
 	if (mesh.is_valid()) {
 		AABB aabb = mesh->get_aabb();
 		return Rect2(aabb.position.x, aabb.position.y, aabb.size.x, aabb.size.y);

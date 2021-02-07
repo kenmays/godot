@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -29,7 +29,7 @@
 /*************************************************************************/
 
 #include "navigation_2d.h"
-#include "servers/navigation_2d_server.h"
+#include "servers/navigation_server_2d.h"
 
 void Navigation2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_rid"), &Navigation2D::get_rid);
@@ -51,44 +51,42 @@ void Navigation2D::_bind_methods() {
 void Navigation2D::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_READY: {
-			Navigation2DServer::get_singleton()->map_set_active(map, true);
+			NavigationServer2D::get_singleton()->map_set_active(map, true);
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
-
-			Navigation2DServer::get_singleton()->map_set_active(map, false);
+			NavigationServer2D::get_singleton()->map_set_active(map, false);
 		} break;
 	}
 }
 
 void Navigation2D::set_cell_size(float p_cell_size) {
 	cell_size = p_cell_size;
-	Navigation2DServer::get_singleton()->map_set_cell_size(map, cell_size);
+	NavigationServer2D::get_singleton()->map_set_cell_size(map, cell_size);
 }
 
 void Navigation2D::set_edge_connection_margin(float p_edge_connection_margin) {
 	edge_connection_margin = p_edge_connection_margin;
-	Navigation2DServer::get_singleton()->map_set_edge_connection_margin(map, edge_connection_margin);
+	NavigationServer2D::get_singleton()->map_set_edge_connection_margin(map, edge_connection_margin);
 }
 
 Vector<Vector2> Navigation2D::get_simple_path(const Vector2 &p_start, const Vector2 &p_end, bool p_optimize) const {
-	return Navigation2DServer::get_singleton()->map_get_path(map, p_start, p_end, p_optimize);
+	return NavigationServer2D::get_singleton()->map_get_path(map, p_start, p_end, p_optimize);
 }
 
 Vector2 Navigation2D::get_closest_point(const Vector2 &p_point) const {
-	return Navigation2DServer::get_singleton()->map_get_closest_point(map, p_point);
+	return NavigationServer2D::get_singleton()->map_get_closest_point(map, p_point);
 }
 
 RID Navigation2D::get_closest_point_owner(const Vector2 &p_point) const {
-	return Navigation2DServer::get_singleton()->map_get_closest_point_owner(map, p_point);
+	return NavigationServer2D::get_singleton()->map_get_closest_point_owner(map, p_point);
 }
 
 Navigation2D::Navigation2D() {
-
-	map = Navigation2DServer::get_singleton()->map_create();
+	map = NavigationServer2D::get_singleton()->map_create();
 	set_cell_size(10); // Ten pixels
 	set_edge_connection_margin(100);
 }
 
 Navigation2D::~Navigation2D() {
-	Navigation2DServer::get_singleton()->free(map);
+	NavigationServer2D::get_singleton()->free(map);
 }

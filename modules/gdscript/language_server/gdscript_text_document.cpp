@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -29,12 +29,14 @@
 /*************************************************************************/
 
 #include "gdscript_text_document.h"
+
 #include "../gdscript.h"
 #include "core/os/os.h"
 #include "editor/editor_settings.h"
 #include "editor/plugins/script_text_editor.h"
 #include "gdscript_extend_parser.h"
 #include "gdscript_language_protocol.h"
+#include "servers/display_server.h"
 
 void GDScriptTextDocument::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("didOpen"), &GDScriptTextDocument::didOpen);
@@ -84,19 +86,15 @@ void GDScriptTextDocument::notify_client_show_symbol(const lsp::DocumentSymbol *
 }
 
 void GDScriptTextDocument::initialize() {
-
 	if (GDScriptLanguageProtocol::get_singleton()->is_smart_resolve_enabled()) {
-
 		const HashMap<StringName, ClassMembers> &native_members = GDScriptLanguageProtocol::get_singleton()->get_workspace()->native_members;
 
-		const StringName *class_ptr = native_members.next(NULL);
+		const StringName *class_ptr = native_members.next(nullptr);
 		while (class_ptr) {
-
 			const ClassMembers &members = native_members.get(*class_ptr);
 
-			const String *name = members.next(NULL);
+			const String *name = members.next(nullptr);
 			while (name) {
-
 				const lsp::DocumentSymbol *symbol = members.get(*name);
 				lsp::CompletionItem item = symbol->make_completion_item();
 				item.data = JOIN_SYMBOLS(String(*class_ptr), *name);
@@ -111,7 +109,6 @@ void GDScriptTextDocument::initialize() {
 }
 
 Variant GDScriptTextDocument::nativeSymbol(const Dictionary &p_params) {
-
 	Variant ret;
 
 	lsp::NativeSymbolInspectParams params;
@@ -141,7 +138,6 @@ Array GDScriptTextDocument::documentSymbol(const Dictionary &p_params) {
 }
 
 Array GDScriptTextDocument::completion(const Dictionary &p_params) {
-
 	Array arr;
 
 	lsp::CompletionParams params;
@@ -151,13 +147,11 @@ Array GDScriptTextDocument::completion(const Dictionary &p_params) {
 	List<ScriptCodeCompletionOption> options;
 	GDScriptLanguageProtocol::get_singleton()->get_workspace()->completion(params, &options);
 
-	if (!options.empty()) {
-
+	if (!options.is_empty()) {
 		int i = 0;
 		arr.resize(options.size());
 
 		for (const List<ScriptCodeCompletionOption>::Element *E = options.front(); E; E = E->next()) {
-
 			const ScriptCodeCompletionOption &option = E->get();
 			lsp::CompletionItem item;
 			item.label = option.display;
@@ -200,11 +194,9 @@ Array GDScriptTextDocument::completion(const Dictionary &p_params) {
 			i++;
 		}
 	} else if (GDScriptLanguageProtocol::get_singleton()->is_smart_resolve_enabled()) {
-
 		arr = native_member_completions.duplicate();
 
 		for (Map<String, ExtendGDScriptParser *>::Element *E = GDScriptLanguageProtocol::get_singleton()->get_workspace()->scripts.front(); E; E = E->next()) {
-
 			ExtendGDScriptParser *script = E->get();
 			const Array &items = script->get_member_completions();
 
@@ -219,28 +211,24 @@ Array GDScriptTextDocument::completion(const Dictionary &p_params) {
 }
 
 Dictionary GDScriptTextDocument::resolve(const Dictionary &p_params) {
-
 	lsp::CompletionItem item;
 	item.load(p_params);
 
 	lsp::CompletionParams params;
 	Variant data = p_params["data"];
 
-	const lsp::DocumentSymbol *symbol = NULL;
+	const lsp::DocumentSymbol *symbol = nullptr;
 
 	if (data.get_type() == Variant::DICTIONARY) {
-
 		params.load(p_params["data"]);
 		symbol = GDScriptLanguageProtocol::get_singleton()->get_workspace()->resolve_symbol(params, item.label, item.kind == lsp::CompletionItemKind::Method || item.kind == lsp::CompletionItemKind::Function);
 
 	} else if (data.get_type() == Variant::STRING) {
-
 		String query = data;
 
 		Vector<String> param_symbols = query.split(SYMBOL_SEPERATOR, false);
 
 		if (param_symbols.size() >= 2) {
-
 			String class_ = param_symbols[0];
 			StringName class_name = class_;
 			String member_name = param_symbols[param_symbols.size() - 1];
@@ -269,7 +257,7 @@ Dictionary GDScriptTextDocument::resolve(const Dictionary &p_params) {
 
 	if ((item.kind == lsp::CompletionItemKind::Method || item.kind == lsp::CompletionItemKind::Function) && !item.label.ends_with("):")) {
 		item.insertText = item.label + "(";
-		if (symbol && symbol->children.empty()) {
+		if (symbol && symbol->children.is_empty()) {
 			item.insertText += ")";
 		}
 	} else if (item.kind == lsp::CompletionItemKind::Event) {
@@ -312,13 +300,11 @@ Array GDScriptTextDocument::colorPresentation(const Dictionary &p_params) {
 }
 
 Variant GDScriptTextDocument::hover(const Dictionary &p_params) {
-
 	lsp::TextDocumentPositionParams params;
 	params.load(p_params);
 
 	const lsp::DocumentSymbol *symbol = GDScriptLanguageProtocol::get_singleton()->get_workspace()->resolve_symbol(params);
 	if (symbol) {
-
 		lsp::Hover hover;
 		hover.contents = symbol->render();
 		hover.range.start = params.position;
@@ -326,7 +312,6 @@ Variant GDScriptTextDocument::hover(const Dictionary &p_params) {
 		return hover.to_json();
 
 	} else if (GDScriptLanguageProtocol::get_singleton()->is_smart_resolve_enabled()) {
-
 		Dictionary ret;
 		Array contents;
 		List<const lsp::DocumentSymbol *> list;
@@ -356,7 +341,7 @@ Variant GDScriptTextDocument::declaration(const Dictionary &p_params) {
 	params.load(p_params);
 	List<const lsp::DocumentSymbol *> symbols;
 	Array arr = this->find_symbols(params, symbols);
-	if (arr.empty() && !symbols.empty() && !symbols.front()->get()->native_class.empty()) { // Find a native symbol
+	if (arr.is_empty() && !symbols.is_empty() && !symbols.front()->get()->native_class.is_empty()) { // Find a native symbol
 		const lsp::DocumentSymbol *symbol = symbols.front()->get();
 		if (GDScriptLanguageProtocol::get_singleton()->is_goto_native_symbols_enabled()) {
 			String id;
@@ -419,7 +404,8 @@ void GDScriptTextDocument::sync_script_content(const String &p_path, const Strin
 
 void GDScriptTextDocument::show_native_symbol_in_editor(const String &p_symbol_id) {
 	ScriptEditor::get_singleton()->call_deferred("_help_class_goto", p_symbol_id);
-	OS::get_singleton()->move_window_to_foreground();
+
+	DisplayServer::get_singleton()->window_move_to_foreground();
 }
 
 Array GDScriptTextDocument::find_symbols(const lsp::TextDocumentPositionParams &p_location, List<const lsp::DocumentSymbol *> &r_list) {
@@ -439,7 +425,7 @@ Array GDScriptTextDocument::find_symbols(const lsp::TextDocumentPositionParams &
 		GDScriptLanguageProtocol::get_singleton()->get_workspace()->resolve_related_symbols(p_location, list);
 		for (List<const lsp::DocumentSymbol *>::Element *E = list.front(); E; E = E->next()) {
 			if (const lsp::DocumentSymbol *s = E->get()) {
-				if (!s->uri.empty()) {
+				if (!s->uri.is_empty()) {
 					lsp::Location location;
 					location.uri = s->uri;
 					location.range = s->range;

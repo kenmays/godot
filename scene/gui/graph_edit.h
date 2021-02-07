@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,29 +32,67 @@
 #define GRAPH_EDIT_H
 
 #include "scene/gui/box_container.h"
+#include "scene/gui/button.h"
 #include "scene/gui/graph_node.h"
 #include "scene/gui/scroll_bar.h"
 #include "scene/gui/slider.h"
 #include "scene/gui/spin_box.h"
 #include "scene/gui/texture_rect.h"
-#include "scene/gui/tool_button.h"
 
 class GraphEdit;
 
 class GraphEditFilter : public Control {
-
 	GDCLASS(GraphEditFilter, Control);
 
 	friend class GraphEdit;
+	friend class GraphEditMinimap;
 	GraphEdit *ge;
-	virtual bool has_point(const Point2 &p_point) const;
+	virtual bool has_point(const Point2 &p_point) const override;
 
 public:
 	GraphEditFilter(GraphEdit *p_edit);
 };
 
-class GraphEdit : public Control {
+class GraphEditMinimap : public Control {
+	GDCLASS(GraphEditMinimap, Control);
 
+	friend class GraphEdit;
+	friend class GraphEditFilter;
+	GraphEdit *ge;
+
+protected:
+	static void _bind_methods();
+
+public:
+	GraphEditMinimap(GraphEdit *p_edit);
+
+	void update_minimap();
+	Rect2 get_camera_rect();
+
+private:
+	Vector2 minimap_padding;
+	Vector2 minimap_offset;
+	Vector2 graph_proportions;
+	Vector2 graph_padding;
+	Vector2 camera_position;
+	Vector2 camera_size;
+
+	bool is_pressing;
+	bool is_resizing;
+
+	Vector2 _get_render_size();
+	Vector2 _get_graph_offset();
+	Vector2 _get_graph_size();
+
+	Vector2 _convert_from_graph_position(const Vector2 &p_position);
+	Vector2 _convert_to_graph_position(const Vector2 &p_position);
+
+	void _gui_input(const Ref<InputEvent> &p_ev);
+
+	void _adjust_graph_scroll(const Vector2 &p_offset);
+};
+
+class GraphEdit : public Control {
 	GDCLASS(GraphEdit, Control);
 
 public:
@@ -67,12 +105,14 @@ public:
 	};
 
 private:
-	ToolButton *zoom_minus;
-	ToolButton *zoom_reset;
-	ToolButton *zoom_plus;
+	Button *zoom_minus;
+	Button *zoom_reset;
+	Button *zoom_plus;
 
-	ToolButton *snap_button;
+	Button *snap_button;
 	SpinBox *snap_amount;
+
+	Button *minimap_button;
 
 	void _zoom_minus();
 	void _zoom_reset();
@@ -95,16 +135,18 @@ private:
 	String connecting_target_to;
 	int connecting_target_index;
 	bool just_disconnected;
+	bool connecting_valid;
+	Vector2 click_pos;
 
 	bool dragging;
 	bool just_selected;
+	bool moving_selection;
 	Vector2 drag_accum;
-	Point2 drag_origin; // Workaround for GH-5907
 
 	float zoom;
 
 	bool box_selecting;
-	bool box_selection_mode_aditive;
+	bool box_selection_mode_additive;
 	Point2 box_selecting_from;
 	Point2 box_selecting_to;
 	Rect2 box_selecting_rect;
@@ -116,9 +158,12 @@ private:
 	bool awaiting_scroll_offset_update;
 	List<Connection> connections;
 
+	float lines_thickness = 2.0f;
+	bool lines_antialiased = true;
+
 	void _bake_segment2d(Vector<Vector2> &points, Vector<Color> &colors, float p_begin, float p_end, const Vector2 &p_a, const Vector2 &p_out, const Vector2 &p_b, const Vector2 &p_in, int p_depth, int p_min_depth, int p_max_depth, float p_tol, const Color &p_color, const Color &p_to_color, int &lines) const;
 
-	void _draw_cos_line(CanvasItem *p_where, const Vector2 &p_from, const Vector2 &p_to, const Color &p_color, const Color &p_to_color);
+	void _draw_cos_line(CanvasItem *p_where, const Vector2 &p_from, const Vector2 &p_to, const Color &p_color, const Color &p_to_color, float p_width, float p_bezier_ratio);
 
 	void _graph_node_raised(Node *p_gn);
 	void _graph_node_moved(Node *p_gn);
@@ -129,12 +174,14 @@ private:
 
 	Control *connections_layer;
 	GraphEditFilter *top_layer;
+	GraphEditMinimap *minimap;
 	void _top_layer_input(const Ref<InputEvent> &p_ev);
 
 	bool is_in_hot_zone(const Vector2 &pos, const Vector2 &p_mouse_pos);
 
 	void _top_layer_draw();
 	void _connections_layer_draw();
+	void _minimap_draw();
 	void _update_scroll_offset();
 
 	Array _get_connection_list() const;
@@ -142,7 +189,6 @@ private:
 	bool lines_on_bg;
 
 	struct ConnType {
-
 		union {
 			struct {
 				uint32_t type_a;
@@ -172,14 +218,17 @@ private:
 	void _snap_toggled();
 	void _snap_value_changed(double);
 
+	friend class GraphEditMinimap;
+	void _minimap_toggled();
+
 	bool _check_clickable_control(Control *p_control, const Vector2 &pos);
 
 protected:
 	static void _bind_methods();
-	virtual void add_child_notify(Node *p_child);
-	virtual void remove_child_notify(Node *p_child);
+	virtual void add_child_notify(Node *p_child) override;
+	virtual void remove_child_notify(Node *p_child) override;
 	void _notification(int p_what);
-	virtual bool clips_input() const;
+	virtual bool clips_input() const override;
 
 public:
 	Error connect_node(const StringName &p_from, int p_from_port, const StringName &p_to, int p_to_port);
@@ -197,7 +246,16 @@ public:
 	void set_zoom_custom(float p_zoom, const Vector2 &p_center);
 	float get_zoom() const;
 
+	void set_minimap_size(Vector2 p_size);
+	Vector2 get_minimap_size() const;
+	void set_minimap_opacity(float p_opacity);
+	float get_minimap_opacity() const;
+
+	void set_minimap_enabled(bool p_enable);
+	bool is_minimap_enabled() const;
+
 	GraphEditFilter *get_top_layer() const { return top_layer; }
+	GraphEditMinimap *get_minimap() const { return minimap; }
 	void get_connection_list(List<Connection> *r_connections) const;
 
 	void set_right_disconnects(bool p_enable);
@@ -219,6 +277,12 @@ public:
 
 	int get_snap() const;
 	void set_snap(int p_snap);
+
+	void set_connection_lines_thickness(float p_thickness);
+	float get_connection_lines_thickness() const;
+
+	void set_connection_lines_antialiased(bool p_antialiased);
+	bool is_connection_lines_antialiased() const;
 
 	HBoxContainer *get_zoom_hbox();
 

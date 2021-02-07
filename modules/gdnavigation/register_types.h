@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,5 +32,10 @@
 	@author AndreaCatania
 */
 
+#ifndef GDNAVIGATION_REGISTER_TYPES_H
+#define GDNAVIGATION_REGISTER_TYPES_H
+
 void register_gdnavigation_types();
 void unregister_gdnavigation_types();
+
+#endif // GDNAVIGATION_REGISTER_TYPES_H

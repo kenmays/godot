@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,11 +31,10 @@
 #ifndef GIPROBE_H
 #define GIPROBE_H
 
-#include "multimesh_instance.h"
-#include "scene/3d/visual_instance.h"
+#include "multimesh_instance_3d.h"
+#include "scene/3d/visual_instance_3d.h"
 
 class GIProbeData : public Resource {
-
 	GDCLASS(GIProbeData, Resource);
 
 	RID probe;
@@ -60,7 +59,7 @@ class GIProbeData : public Resource {
 
 protected:
 	static void _bind_methods();
-	void _validate_property(PropertyInfo &property) const;
+	void _validate_property(PropertyInfo &property) const override;
 
 public:
 	void allocate(const Transform &p_to_cell_xform, const AABB &p_aabb, const Vector3 &p_octree_size, const Vector<uint8_t> &p_octree_cells, const Vector<uint8_t> &p_data_cells, const Vector<uint8_t> &p_distance_field, const Vector<int> &p_level_counts);
@@ -102,14 +101,14 @@ public:
 	void set_use_two_bounces(bool p_enable);
 	bool is_using_two_bounces() const;
 
-	virtual RID get_rid() const;
+	virtual RID get_rid() const override;
 
 	GIProbeData();
 	~GIProbeData();
 };
 
-class GIProbe : public VisualInstance {
-	GDCLASS(GIProbe, VisualInstance);
+class GIProbe : public VisualInstance3D {
+	GDCLASS(GIProbe, VisualInstance3D);
 
 public:
 	enum Subdiv {
@@ -135,7 +134,7 @@ private:
 
 	struct PlotMesh {
 		Ref<Material> override_material;
-		Vector<Ref<Material> > instance_materials;
+		Vector<Ref<Material>> instance_materials;
 		Ref<Mesh> mesh;
 		Transform local_xform;
 	};
@@ -161,12 +160,12 @@ public:
 	Vector3 get_extents() const;
 	Vector3i get_estimated_cell_size() const;
 
-	void bake(Node *p_from_node = NULL, bool p_create_visual_debug = false);
+	void bake(Node *p_from_node = nullptr, bool p_create_visual_debug = false);
 
-	virtual AABB get_aabb() const;
-	virtual Vector<Face3> get_faces(uint32_t p_usage_flags) const;
+	virtual AABB get_aabb() const override;
+	virtual Vector<Face3> get_faces(uint32_t p_usage_flags) const override;
 
-	virtual String get_configuration_warning() const;
+	virtual String get_configuration_warning() const override;
 
 	GIProbe();
 	~GIProbe();

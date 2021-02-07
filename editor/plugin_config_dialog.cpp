@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -52,13 +52,13 @@ void PluginConfigDialog::_clear_fields() {
 }
 
 void PluginConfigDialog::_on_confirmed() {
-
 	String path = "res://addons/" + subfolder_edit->get_text();
 
 	if (!_edit_mode) {
 		DirAccess *d = DirAccess::create(DirAccess::ACCESS_RESOURCES);
-		if (!d || d->make_dir_recursive(path) != OK)
+		if (!d || d->make_dir_recursive(path) != OK) {
 			return;
+		}
 	}
 
 	Ref<ConfigFile> cf = memnew(ConfigFile);
@@ -126,18 +126,19 @@ void PluginConfigDialog::_on_cancelled() {
 void PluginConfigDialog::_on_required_text_changed(const String &) {
 	int lang_idx = script_option_edit->get_selected();
 	String ext = ScriptServer::get_language(lang_idx)->get_extension();
-	get_ok()->set_disabled(script_edit->get_text().get_basename().empty() || script_edit->get_text().get_extension() != ext || name_edit->get_text().empty());
+	get_ok_button()->set_disabled(script_edit->get_text().get_basename().is_empty() || script_edit->get_text().get_extension() != ext || name_edit->get_text().is_empty());
 }
 
 void PluginConfigDialog::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_VISIBILITY_CHANGED: {
+			if (is_visible()) {
+				name_edit->grab_focus();
+			}
+		} break;
 		case NOTIFICATION_READY: {
 			connect("confirmed", callable_mp(this, &PluginConfigDialog::_on_confirmed));
-			get_cancel()->connect("pressed", callable_mp(this, &PluginConfigDialog::_on_cancelled));
-		} break;
-
-		case NOTIFICATION_POST_POPUP: {
-			name_edit->grab_focus();
+			get_cancel_button()->connect("pressed", callable_mp(this, &PluginConfigDialog::_on_cancelled));
 		} break;
 	}
 }
@@ -170,8 +171,8 @@ void PluginConfigDialog::config(const String &p_config_path) {
 		Object::cast_to<Label>(subfolder_edit->get_parent()->get_child(subfolder_edit->get_index() - 1))->show();
 		set_title(TTR("Create a Plugin"));
 	}
-	get_ok()->set_disabled(!_edit_mode);
-	get_ok()->set_text(_edit_mode ? TTR("Update") : TTR("Create"));
+	get_ok_button()->set_disabled(!_edit_mode);
+	get_ok_button()->set_text(_edit_mode ? TTR("Update") : TTR("Create"));
 }
 
 void PluginConfigDialog::_bind_methods() {
@@ -179,7 +180,7 @@ void PluginConfigDialog::_bind_methods() {
 }
 
 PluginConfigDialog::PluginConfigDialog() {
-	get_ok()->set_disabled(true);
+	get_ok_button()->set_disabled(true);
 	set_hide_on_ok(true);
 
 	GridContainer *grid = memnew(GridContainer);

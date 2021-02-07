@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,8 +32,8 @@
 #define COLLISION_OBJECT_2D_SW_H
 
 #include "broad_phase_2d_sw.h"
-#include "core/self_list.h"
-#include "servers/physics_2d_server.h"
+#include "core/templates/self_list.h"
+#include "servers/physics_server_2d.h"
 #include "shape_2d_sw.h"
 
 class Space2DSW;
@@ -53,7 +53,6 @@ private:
 	bool pickable;
 
 	struct Shape {
-
 		Transform2D xform;
 		Transform2D xform_inv;
 		BroadPhase2DSW::ID bpid;
@@ -62,7 +61,7 @@ private:
 		Variant metadata;
 		bool disabled;
 		bool one_way_collision;
-		float one_way_collision_margin;
+		real_t one_way_collision_margin;
 		Shape() {
 			disabled = false;
 			one_way_collision = false;
@@ -154,7 +153,7 @@ public:
 		return shapes[p_idx].disabled;
 	}
 
-	_FORCE_INLINE_ void set_shape_as_one_way_collision(int p_idx, bool p_one_way_collision, float p_margin) {
+	_FORCE_INLINE_ void set_shape_as_one_way_collision(int p_idx, bool p_one_way_collision, real_t p_margin) {
 		CRASH_BAD_INDEX(p_idx, shapes.size());
 		shapes.write[p_idx].one_way_collision = p_one_way_collision;
 		shapes.write[p_idx].one_way_collision_margin = p_margin;
@@ -164,15 +163,21 @@ public:
 		return shapes[p_idx].one_way_collision;
 	}
 
-	_FORCE_INLINE_ float get_shape_one_way_collision_margin(int p_idx) const {
+	_FORCE_INLINE_ real_t get_shape_one_way_collision_margin(int p_idx) const {
 		CRASH_BAD_INDEX(p_idx, shapes.size());
 		return shapes[p_idx].one_way_collision_margin;
 	}
 
-	void set_collision_mask(uint32_t p_mask) { collision_mask = p_mask; }
+	void set_collision_mask(uint32_t p_mask) {
+		collision_mask = p_mask;
+		_shape_changed();
+	}
 	_FORCE_INLINE_ uint32_t get_collision_mask() const { return collision_mask; }
 
-	void set_collision_layer(uint32_t p_layer) { collision_layer = p_layer; }
+	void set_collision_layer(uint32_t p_layer) {
+		collision_layer = p_layer;
+		_shape_changed();
+	}
 	_FORCE_INLINE_ uint32_t get_collision_layer() const { return collision_layer; }
 
 	void remove_shape(Shape2DSW *p_shape);
@@ -186,7 +191,6 @@ public:
 	_FORCE_INLINE_ bool is_pickable() const { return pickable; }
 
 	_FORCE_INLINE_ bool test_collision_mask(CollisionObject2DSW *p_other) const {
-
 		return collision_layer & p_other->collision_mask || p_other->collision_layer & collision_mask;
 	}
 

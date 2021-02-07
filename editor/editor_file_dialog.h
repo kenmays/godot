@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -40,12 +40,10 @@
 #include "scene/gui/separator.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/texture_rect.h"
-#include "scene/gui/tool_button.h"
 
 class DependencyRemoveDialog;
 
 class EditorFileDialog : public ConfirmationDialog {
-
 	GDCLASS(EditorFileDialog, ConfirmationDialog);
 
 public:
@@ -60,12 +58,12 @@ public:
 		ACCESS_FILESYSTEM
 	};
 
-	enum Mode {
-		MODE_OPEN_FILE,
-		MODE_OPEN_FILES,
-		MODE_OPEN_DIR,
-		MODE_OPEN_ANY,
-		MODE_SAVE_FILE
+	enum FileMode {
+		FILE_MODE_OPEN_FILE,
+		FILE_MODE_OPEN_FILES,
+		FILE_MODE_OPEN_DIR,
+		FILE_MODE_OPEN_ANY,
+		FILE_MODE_SAVE_FILE
 	};
 
 	typedef Ref<Texture2D> (*GetIconFunc)(const String &);
@@ -92,13 +90,13 @@ private:
 	Access access;
 	//Button *action;
 	VBoxContainer *vbox;
-	Mode mode;
+	FileMode mode;
 	bool can_create_dir;
 	LineEdit *dir;
 
-	ToolButton *dir_prev;
-	ToolButton *dir_next;
-	ToolButton *dir_up;
+	Button *dir_prev;
+	Button *dir_next;
+	Button *dir_up;
 
 	HBoxContainer *drives_container;
 	HBoxContainer *shortcuts_container;
@@ -112,20 +110,19 @@ private:
 	LineEdit *file;
 	OptionButton *filter;
 	AcceptDialog *mkdirerr;
-	AcceptDialog *exterr;
 	DirAccess *dir_access;
 	ConfirmationDialog *confirm_save;
 	DependencyRemoveDialog *remove_dialog;
 
-	ToolButton *mode_thumbnails;
-	ToolButton *mode_list;
+	Button *mode_thumbnails;
+	Button *mode_list;
 
-	ToolButton *refresh;
-	ToolButton *favorite;
-	ToolButton *show_hidden;
+	Button *refresh;
+	Button *favorite;
+	Button *show_hidden;
 
-	ToolButton *fav_up;
-	ToolButton *fav_down;
+	Button *fav_up;
+	Button *fav_down;
 
 	ItemList *favorites;
 	ItemList *recent;
@@ -187,7 +184,7 @@ private:
 	void _go_back();
 	void _go_forward();
 
-	virtual void _post_popup();
+	virtual void _post_popup() override;
 
 	void _save_to_recent();
 	//callback function is callback(String p_path,Ref<Texture2D> preview,Variant udata) preview null if could not load
@@ -205,6 +202,7 @@ protected:
 	static void _bind_methods();
 	//bind helpers
 public:
+	void popup_file_dialog();
 	void clear_filters();
 	void add_filter(const String &p_filter);
 
@@ -221,8 +219,8 @@ public:
 	void set_display_mode(DisplayMode p_mode);
 	DisplayMode get_display_mode() const;
 
-	void set_mode(Mode p_mode);
-	Mode get_mode() const;
+	void set_file_mode(FileMode p_mode);
+	FileMode get_file_mode() const;
 
 	VBoxContainer *get_vbox();
 	LineEdit *get_line_edit() { return file; }
@@ -245,29 +243,7 @@ public:
 	~EditorFileDialog();
 };
 
-class EditorLineEditFileChooser : public HBoxContainer {
-
-	GDCLASS(EditorLineEditFileChooser, HBoxContainer);
-	Button *button;
-	LineEdit *line_edit;
-	EditorFileDialog *dialog;
-
-	void _chosen(const String &p_text);
-	void _browse();
-
-protected:
-	void _notification(int p_what);
-	static void _bind_methods();
-
-public:
-	Button *get_button() { return button; }
-	LineEdit *get_line_edit() { return line_edit; }
-	EditorFileDialog *get_file_dialog() { return dialog; }
-
-	EditorLineEditFileChooser();
-};
-
-VARIANT_ENUM_CAST(EditorFileDialog::Mode);
+VARIANT_ENUM_CAST(EditorFileDialog::FileMode);
 VARIANT_ENUM_CAST(EditorFileDialog::Access);
 VARIANT_ENUM_CAST(EditorFileDialog::DisplayMode);
 

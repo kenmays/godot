@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -35,7 +35,6 @@
 #include "scene/resources/shape_2d.h"
 
 class CollisionObject2D : public Node2D {
-
 	GDCLASS(CollisionObject2D, Node2D);
 
 	bool area;
@@ -43,7 +42,6 @@ class CollisionObject2D : public Node2D {
 	bool pickable;
 
 	struct ShapeData {
-
 		Object *owner;
 		Transform2D xform;
 		struct Shape {
@@ -54,13 +52,13 @@ class CollisionObject2D : public Node2D {
 		Vector<Shape> shapes;
 		bool disabled;
 		bool one_way_collision;
-		float one_way_collision_margin;
+		real_t one_way_collision_margin;
 
 		ShapeData() {
 			disabled = false;
 			one_way_collision = false;
 			one_way_collision_margin = 0;
-			owner = NULL;
+			owner = nullptr;
 		}
 	};
 
@@ -99,8 +97,8 @@ public:
 	void shape_owner_set_one_way_collision(uint32_t p_owner, bool p_enable);
 	bool is_shape_owner_one_way_collision_enabled(uint32_t p_owner) const;
 
-	void shape_owner_set_one_way_collision_margin(uint32_t p_owner, float p_margin);
-	float get_shape_owner_one_way_collision_margin(uint32_t p_owner) const;
+	void shape_owner_set_one_way_collision_margin(uint32_t p_owner, real_t p_margin);
+	real_t get_shape_owner_one_way_collision_margin(uint32_t p_owner) const;
 
 	void shape_owner_add_shape(uint32_t p_owner, const Ref<Shape2D> &p_shape);
 	int shape_owner_get_shape_count(uint32_t p_owner) const;
@@ -115,7 +113,7 @@ public:
 	void set_pickable(bool p_enabled);
 	bool is_pickable() const;
 
-	String get_configuration_warning() const;
+	String get_configuration_warning() const override;
 
 	_FORCE_INLINE_ RID get_rid() const { return rid; }
 

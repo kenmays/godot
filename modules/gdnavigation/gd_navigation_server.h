@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,9 +31,9 @@
 #ifndef GD_NAVIGATION_SERVER_H
 #define GD_NAVIGATION_SERVER_H
 
-#include "core/rid.h"
-#include "core/rid_owner.h"
-#include "servers/navigation_server.h"
+#include "core/templates/rid.h"
+#include "core/templates/rid_owner.h"
+#include "servers/navigation_server_3d.h"
 
 #include "nav_map.h"
 #include "nav_region.h"
@@ -67,7 +67,7 @@ struct SetCommand {
 	virtual void exec(GdNavigationServer *server) = 0;
 };
 
-class GdNavigationServer : public NavigationServer {
+class GdNavigationServer : public NavigationServer3D {
 	Mutex commands_mutex;
 	/// Mutex used to make any operation threadsafe.
 	Mutex operations_mutex;
@@ -78,7 +78,7 @@ class GdNavigationServer : public NavigationServer {
 	mutable RID_PtrOwner<NavRegion> region_owner;
 	mutable RID_PtrOwner<RvoAgent> agent_owner;
 
-	bool active;
+	bool active = true;
 	Vector<NavMap *> active_maps;
 
 public:

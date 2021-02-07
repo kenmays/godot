@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -30,115 +30,172 @@
 
 #include "graph_node.h"
 
-#include "core/method_bind_ext.gen.inc"
+#include "core/string/translation.h"
 
 bool GraphNode::_set(const StringName &p_name, const Variant &p_value) {
+	String str = p_name;
+	if (str.begins_with("opentype_features/")) {
+		String name = str.get_slicec('/', 1);
+		int32_t tag = TS->name_to_tag(name);
+		double value = p_value;
+		if (value == -1) {
+			if (opentype_features.has(tag)) {
+				opentype_features.erase(tag);
+				_shape();
+				update();
+			}
+		} else {
+			if ((double)opentype_features[tag] != value) {
+				opentype_features[tag] = value;
+				_shape();
+				update();
+			}
+		}
+		_change_notify();
+		return true;
+	}
 
-	if (!p_name.operator String().begins_with("slot/"))
+	if (!str.begins_with("slot/")) {
 		return false;
+	}
 
-	int idx = p_name.operator String().get_slice("/", 1).to_int();
-	String what = p_name.operator String().get_slice("/", 2);
+	int idx = str.get_slice("/", 1).to_int();
+	String what = str.get_slice("/", 2);
 
 	Slot si;
-	if (slot_info.has(idx))
+	if (slot_info.has(idx)) {
 		si = slot_info[idx];
+	}
 
-	if (what == "left_enabled")
+	if (what == "left_enabled") {
 		si.enable_left = p_value;
-	else if (what == "left_type")
+	} else if (what == "left_type") {
 		si.type_left = p_value;
-	else if (what == "left_color")
+	} else if (what == "left_icon") {
+		si.custom_slot_left = p_value;
+	} else if (what == "left_color") {
 		si.color_left = p_value;
-	else if (what == "right_enabled")
+	} else if (what == "right_enabled") {
 		si.enable_right = p_value;
-	else if (what == "right_type")
+	} else if (what == "right_type") {
 		si.type_right = p_value;
-	else if (what == "right_color")
+	} else if (what == "right_color") {
 		si.color_right = p_value;
-	else
+	} else if (what == "right_icon") {
+		si.custom_slot_right = p_value;
+	} else {
 		return false;
+	}
 
-	set_slot(idx, si.enable_left, si.type_left, si.color_left, si.enable_right, si.type_right, si.color_right);
+	set_slot(idx, si.enable_left, si.type_left, si.color_left, si.enable_right, si.type_right, si.color_right, si.custom_slot_left, si.custom_slot_right);
 	update();
 	return true;
 }
 
 bool GraphNode::_get(const StringName &p_name, Variant &r_ret) const {
+	String str = p_name;
+	if (str.begins_with("opentype_features/")) {
+		String name = str.get_slicec('/', 1);
+		int32_t tag = TS->name_to_tag(name);
+		if (opentype_features.has(tag)) {
+			r_ret = opentype_features[tag];
+			return true;
+		} else {
+			r_ret = -1;
+			return true;
+		}
+	}
 
-	if (!p_name.operator String().begins_with("slot/")) {
+	if (!str.begins_with("slot/")) {
 		return false;
 	}
 
-	int idx = p_name.operator String().get_slice("/", 1).to_int();
-	String what = p_name.operator String().get_slice("/", 2);
+	int idx = str.get_slice("/", 1).to_int();
+	String what = str.get_slice("/", 2);
 
 	Slot si;
-	if (slot_info.has(idx))
+	if (slot_info.has(idx)) {
 		si = slot_info[idx];
+	}
 
-	if (what == "left_enabled")
+	if (what == "left_enabled") {
 		r_ret = si.enable_left;
-	else if (what == "left_type")
+	} else if (what == "left_type") {
 		r_ret = si.type_left;
-	else if (what == "left_color")
+	} else if (what == "left_color") {
 		r_ret = si.color_left;
-	else if (what == "right_enabled")
+	} else if (what == "left_icon") {
+		r_ret = si.custom_slot_left;
+	} else if (what == "right_enabled") {
 		r_ret = si.enable_right;
-	else if (what == "right_type")
+	} else if (what == "right_type") {
 		r_ret = si.type_right;
-	else if (what == "right_color")
+	} else if (what == "right_color") {
 		r_ret = si.color_right;
-	else
+	} else if (what == "right_icon") {
+		r_ret = si.custom_slot_right;
+	} else {
 		return false;
+	}
 
 	return true;
 }
+
 void GraphNode::_get_property_list(List<PropertyInfo> *p_list) const {
+	for (const Variant *ftr = opentype_features.next(nullptr); ftr != nullptr; ftr = opentype_features.next(ftr)) {
+		String name = TS->tag_to_name(*ftr);
+		p_list->push_back(PropertyInfo(Variant::FLOAT, "opentype_features/" + name));
+	}
+	p_list->push_back(PropertyInfo(Variant::NIL, "opentype_features/_new", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR));
 
 	int idx = 0;
 	for (int i = 0; i < get_child_count(); i++) {
 		Control *c = Object::cast_to<Control>(get_child(i));
-		if (!c || c->is_set_as_toplevel())
+		if (!c || c->is_set_as_top_level()) {
 			continue;
+		}
 
 		String base = "slot/" + itos(idx) + "/";
 
 		p_list->push_back(PropertyInfo(Variant::BOOL, base + "left_enabled"));
 		p_list->push_back(PropertyInfo(Variant::INT, base + "left_type"));
 		p_list->push_back(PropertyInfo(Variant::COLOR, base + "left_color"));
+		p_list->push_back(PropertyInfo(Variant::OBJECT, base + "left_icon", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_STORE_IF_NULL));
 		p_list->push_back(PropertyInfo(Variant::BOOL, base + "right_enabled"));
 		p_list->push_back(PropertyInfo(Variant::INT, base + "right_type"));
 		p_list->push_back(PropertyInfo(Variant::COLOR, base + "right_color"));
+		p_list->push_back(PropertyInfo(Variant::OBJECT, base + "right_icon", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_STORE_IF_NULL));
 
 		idx++;
 	}
 }
 
 void GraphNode::_resort() {
-
-	int sep = get_constant("separation");
-	Ref<StyleBox> sb = get_stylebox("frame");
+	int sep = get_theme_constant("separation");
+	Ref<StyleBox> sb = get_theme_stylebox("frame");
 	bool first = true;
 
 	Size2 minsize;
 
 	for (int i = 0; i < get_child_count(); i++) {
 		Control *c = Object::cast_to<Control>(get_child(i));
-		if (!c)
+		if (!c) {
 			continue;
-		if (c->is_set_as_toplevel())
+		}
+		if (c->is_set_as_top_level()) {
 			continue;
+		}
 
 		Size2i size = c->get_combined_minimum_size();
 
 		minsize.y += size.y;
 		minsize.x = MAX(minsize.x, size.x);
 
-		if (first)
+		if (first) {
 			first = false;
-		else
+		} else {
 			minsize.y += sep;
+		}
 	}
 
 	int vofs = 0;
@@ -147,14 +204,16 @@ void GraphNode::_resort() {
 	cache_y.clear();
 	for (int i = 0; i < get_child_count(); i++) {
 		Control *c = Object::cast_to<Control>(get_child(i));
-		if (!c)
+		if (!c) {
 			continue;
-		if (c->is_set_as_toplevel())
+		}
+		if (c->is_set_as_top_level()) {
 			continue;
+		}
 
 		Size2i size = c->get_combined_minimum_size();
 
-		Rect2 r(sb->get_margin(MARGIN_LEFT), sb->get_margin(MARGIN_TOP) + vofs, w, size.y);
+		Rect2 r(sb->get_margin(SIDE_LEFT), sb->get_margin(SIDE_TOP) + vofs, w, size.y);
 
 		fit_child_in_rect(c, r);
 		cache_y.push_back(vofs + size.y * 0.5);
@@ -167,16 +226,15 @@ void GraphNode::_resort() {
 }
 
 bool GraphNode::has_point(const Point2 &p_point) const {
-
 	if (comment) {
-		Ref<StyleBox> comment = get_stylebox("comment");
-		Ref<Texture2D> resizer = get_icon("resizer");
+		Ref<StyleBox> comment = get_theme_stylebox("comment");
+		Ref<Texture2D> resizer = get_theme_icon("resizer");
 
 		if (Rect2(get_size() - resizer->get_size(), resizer->get_size()).has_point(p_point)) {
 			return true;
 		}
 
-		if (Rect2(0, 0, get_size().width, comment->get_margin(MARGIN_TOP)).has_point(p_point)) {
+		if (Rect2(0, 0, get_size().width, comment->get_margin(SIDE_TOP)).has_point(p_point)) {
 			return true;
 		}
 
@@ -188,61 +246,57 @@ bool GraphNode::has_point(const Point2 &p_point) const {
 }
 
 void GraphNode::_notification(int p_what) {
-
 	switch (p_what) {
 		case NOTIFICATION_DRAW: {
-
 			Ref<StyleBox> sb;
 
 			if (comment) {
-				sb = get_stylebox(selected ? "commentfocus" : "comment");
+				sb = get_theme_stylebox(selected ? "commentfocus" : "comment");
 
 			} else {
-
-				sb = get_stylebox(selected ? "selectedframe" : "frame");
+				sb = get_theme_stylebox(selected ? "selectedframe" : "frame");
 			}
 
 			//sb=sb->duplicate();
 			//sb->call("set_modulate",modulate);
-			Ref<Texture2D> port = get_icon("port");
-			Ref<Texture2D> close = get_icon("close");
-			Ref<Texture2D> resizer = get_icon("resizer");
-			int close_offset = get_constant("close_offset");
-			int close_h_offset = get_constant("close_h_offset");
-			Color close_color = get_color("close_color");
-			Color resizer_color = get_color("resizer_color");
-			Ref<Font> title_font = get_font("title_font");
-			int title_offset = get_constant("title_offset");
-			int title_h_offset = get_constant("title_h_offset");
-			Color title_color = get_color("title_color");
+			Ref<Texture2D> port = get_theme_icon("port");
+			Ref<Texture2D> close = get_theme_icon("close");
+			Ref<Texture2D> resizer = get_theme_icon("resizer");
+			int close_offset = get_theme_constant("close_offset");
+			int close_h_offset = get_theme_constant("close_h_offset");
+			Color close_color = get_theme_color("close_color");
+			Color resizer_color = get_theme_color("resizer_color");
+			int title_offset = get_theme_constant("title_offset");
+			int title_h_offset = get_theme_constant("title_h_offset");
+			Color title_color = get_theme_color("title_color");
 			Point2i icofs = -port->get_size() * 0.5;
-			int edgeofs = get_constant("port_offset");
-			icofs.y += sb->get_margin(MARGIN_TOP);
+			int edgeofs = get_theme_constant("port_offset");
+			icofs.y += sb->get_margin(SIDE_TOP);
 
 			draw_style_box(sb, Rect2(Point2(), get_size()));
 
 			switch (overlay) {
 				case OVERLAY_DISABLED: {
-
 				} break;
 				case OVERLAY_BREAKPOINT: {
-
-					draw_style_box(get_stylebox("breakpoint"), Rect2(Point2(), get_size()));
+					draw_style_box(get_theme_stylebox("breakpoint"), Rect2(Point2(), get_size()));
 				} break;
 				case OVERLAY_POSITION: {
-					draw_style_box(get_stylebox("position"), Rect2(Point2(), get_size()));
+					draw_style_box(get_theme_stylebox("position"), Rect2(Point2(), get_size()));
 
 				} break;
 			}
 
 			int w = get_size().width - sb->get_minimum_size().x;
 
-			if (show_close)
-				w -= close->get_width();
-
-			draw_string(title_font, Point2(sb->get_margin(MARGIN_LEFT) + title_h_offset, -title_font->get_height() + title_font->get_ascent() + title_offset), title, title_color, w);
 			if (show_close) {
-				Vector2 cpos = Point2(w + sb->get_margin(MARGIN_LEFT) + close_h_offset, -close->get_height() + close_offset);
+				w -= close->get_width();
+			}
+
+			title_buf->set_width(w);
+			title_buf->draw(get_canvas_item(), Point2(sb->get_margin(SIDE_LEFT) + title_h_offset, -title_buf->get_size().y + title_offset), title_color);
+			if (show_close) {
+				Vector2 cpos = Point2(w + sb->get_margin(SIDE_LEFT) + close_h_offset, -close->get_height() + close_offset);
 				draw_texture(close, cpos, close_color);
 				close_rect.position = cpos;
 				close_rect.size = close->get_size();
@@ -251,11 +305,12 @@ void GraphNode::_notification(int p_what) {
 			}
 
 			for (Map<int, Slot>::Element *E = slot_info.front(); E; E = E->next()) {
-
-				if (E->key() < 0 || E->key() >= cache_y.size())
+				if (E->key() < 0 || E->key() >= cache_y.size()) {
 					continue;
-				if (!slot_info.has(E->key()))
+				}
+				if (!slot_info.has(E->key())) {
 					continue;
+				}
 				const Slot &s = slot_info[E->key()];
 				//left
 				if (s.enable_left) {
@@ -280,22 +335,39 @@ void GraphNode::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_SORT_CHILDREN: {
-
 			_resort();
 		} break;
 
+		case NOTIFICATION_LAYOUT_DIRECTION_CHANGED:
+		case NOTIFICATION_TRANSLATION_CHANGED:
 		case NOTIFICATION_THEME_CHANGED: {
+			_shape();
 
 			minimum_size_changed();
+			update();
 		} break;
 	}
 }
 
-void GraphNode::set_slot(int p_idx, bool p_enable_left, int p_type_left, const Color &p_color_left, bool p_enable_right, int p_type_right, const Color &p_color_right, const Ref<Texture2D> &p_custom_left, const Ref<Texture2D> &p_custom_right) {
+void GraphNode::_shape() {
+	Ref<Font> font = get_theme_font("title_font");
+	int font_size = get_theme_font_size("title_font_size");
 
+	title_buf->clear();
+	if (text_direction == Control::TEXT_DIRECTION_INHERITED) {
+		title_buf->set_direction(is_layout_rtl() ? TextServer::DIRECTION_RTL : TextServer::DIRECTION_LTR);
+	} else {
+		title_buf->set_direction((TextServer::Direction)text_direction);
+	}
+	title_buf->add_string(title, font, font_size, opentype_features, (language != "") ? language : TranslationServer::get_singleton()->get_tool_locale());
+}
+
+void GraphNode::set_slot(int p_idx, bool p_enable_left, int p_type_left, const Color &p_color_left, bool p_enable_right, int p_type_right, const Color &p_color_right, const Ref<Texture2D> &p_custom_left, const Ref<Texture2D> &p_custom_right) {
 	ERR_FAIL_COND(p_idx < 0);
 
-	if (!p_enable_left && p_type_left == 0 && p_color_left == Color(1, 1, 1, 1) && !p_enable_right && p_type_right == 0 && p_color_right == Color(1, 1, 1, 1)) {
+	if (!p_enable_left && p_type_left == 0 && p_color_left == Color(1, 1, 1, 1) &&
+			!p_enable_right && p_type_right == 0 && p_color_right == Color(1, 1, 1, 1) &&
+			!p_custom_left.is_valid() && !p_custom_right.is_valid()) {
 		slot_info.erase(p_idx);
 		return;
 	}
@@ -315,121 +387,167 @@ void GraphNode::set_slot(int p_idx, bool p_enable_left, int p_type_left, const C
 }
 
 void GraphNode::clear_slot(int p_idx) {
-
 	slot_info.erase(p_idx);
 	update();
 	connpos_dirty = true;
 }
-void GraphNode::clear_all_slots() {
 
+void GraphNode::clear_all_slots() {
 	slot_info.clear();
 	update();
 	connpos_dirty = true;
 }
-bool GraphNode::is_slot_enabled_left(int p_idx) const {
 
-	if (!slot_info.has(p_idx))
+bool GraphNode::is_slot_enabled_left(int p_idx) const {
+	if (!slot_info.has(p_idx)) {
 		return false;
+	}
 	return slot_info[p_idx].enable_left;
 }
 
 int GraphNode::get_slot_type_left(int p_idx) const {
-
-	if (!slot_info.has(p_idx))
+	if (!slot_info.has(p_idx)) {
 		return 0;
+	}
 	return slot_info[p_idx].type_left;
 }
 
 Color GraphNode::get_slot_color_left(int p_idx) const {
-
-	if (!slot_info.has(p_idx))
+	if (!slot_info.has(p_idx)) {
 		return Color(1, 1, 1, 1);
+	}
 	return slot_info[p_idx].color_left;
 }
 
 bool GraphNode::is_slot_enabled_right(int p_idx) const {
-
-	if (!slot_info.has(p_idx))
+	if (!slot_info.has(p_idx)) {
 		return false;
+	}
 	return slot_info[p_idx].enable_right;
 }
 
 int GraphNode::get_slot_type_right(int p_idx) const {
-
-	if (!slot_info.has(p_idx))
+	if (!slot_info.has(p_idx)) {
 		return 0;
+	}
 	return slot_info[p_idx].type_right;
 }
 
 Color GraphNode::get_slot_color_right(int p_idx) const {
-
-	if (!slot_info.has(p_idx))
+	if (!slot_info.has(p_idx)) {
 		return Color(1, 1, 1, 1);
+	}
 	return slot_info[p_idx].color_right;
 }
 
 Size2 GraphNode::get_minimum_size() const {
-
-	Ref<Font> title_font = get_font("title_font");
-
-	int sep = get_constant("separation");
-	Ref<StyleBox> sb = get_stylebox("frame");
+	int sep = get_theme_constant("separation");
+	Ref<StyleBox> sb = get_theme_stylebox("frame");
 	bool first = true;
 
 	Size2 minsize;
-	minsize.x = title_font->get_string_size(title).x;
+	minsize.x = title_buf->get_size().x;
 	if (show_close) {
-		Ref<Texture2D> close = get_icon("close");
+		Ref<Texture2D> close = get_theme_icon("close");
 		minsize.x += sep + close->get_width();
 	}
 
 	for (int i = 0; i < get_child_count(); i++) {
-
 		Control *c = Object::cast_to<Control>(get_child(i));
-		if (!c)
+		if (!c) {
 			continue;
-		if (c->is_set_as_toplevel())
+		}
+		if (c->is_set_as_top_level()) {
 			continue;
+		}
 
 		Size2i size = c->get_combined_minimum_size();
 
 		minsize.y += size.y;
 		minsize.x = MAX(minsize.x, size.x);
 
-		if (first)
+		if (first) {
 			first = false;
-		else
+		} else {
 			minsize.y += sep;
+		}
 	}
 
 	return minsize + sb->get_minimum_size();
 }
 
 void GraphNode::set_title(const String &p_title) {
-
-	if (title == p_title)
+	if (title == p_title) {
 		return;
+	}
 	title = p_title;
+	_shape();
+
 	update();
 	_change_notify("title");
 	minimum_size_changed();
 }
 
 String GraphNode::get_title() const {
-
 	return title;
 }
 
-void GraphNode::set_offset(const Vector2 &p_offset) {
+void GraphNode::set_text_direction(Control::TextDirection p_text_direction) {
+	ERR_FAIL_COND((int)p_text_direction < -1 || (int)p_text_direction > 3);
+	if (text_direction != p_text_direction) {
+		text_direction = p_text_direction;
+		_shape();
+		update();
+	}
+}
 
-	offset = p_offset;
-	emit_signal("offset_changed");
+Control::TextDirection GraphNode::get_text_direction() const {
+	return text_direction;
+}
+
+void GraphNode::clear_opentype_features() {
+	opentype_features.clear();
+	_shape();
 	update();
 }
 
-Vector2 GraphNode::get_offset() const {
+void GraphNode::set_opentype_feature(const String &p_name, int p_value) {
+	int32_t tag = TS->name_to_tag(p_name);
+	if (!opentype_features.has(tag) || (int)opentype_features[tag] != p_value) {
+		opentype_features[tag] = p_value;
+		_shape();
+		update();
+	}
+}
 
-	return offset;
+int GraphNode::get_opentype_feature(const String &p_name) const {
+	int32_t tag = TS->name_to_tag(p_name);
+	if (!opentype_features.has(tag)) {
+		return -1;
+	}
+	return opentype_features[tag];
+}
+
+void GraphNode::set_language(const String &p_language) {
+	if (language != p_language) {
+		language = p_language;
+		_shape();
+		update();
+	}
+}
+
+String GraphNode::get_language() const {
+	return language;
+}
+
+void GraphNode::set_position_offset(const Vector2 &p_offset) {
+	position_offset = p_offset;
+	emit_signal("position_offset_changed");
+	update();
+}
+
+Vector2 GraphNode::get_position_offset() const {
+	return position_offset;
 }
 
 void GraphNode::set_selected(bool p_selected) {
@@ -442,10 +560,11 @@ bool GraphNode::is_selected() {
 }
 
 void GraphNode::set_drag(bool p_drag) {
-	if (p_drag)
-		drag_from = get_offset();
-	else
-		emit_signal("dragged", drag_from, get_offset()); //useful for undo/redo
+	if (p_drag) {
+		drag_from = get_position_offset();
+	} else {
+		emit_signal("dragged", drag_from, get_position_offset()); //useful for undo/redo
+	}
 }
 
 Vector2 GraphNode::get_drag_from() {
@@ -453,21 +572,19 @@ Vector2 GraphNode::get_drag_from() {
 }
 
 void GraphNode::set_show_close_button(bool p_enable) {
-
 	show_close = p_enable;
 	update();
 }
-bool GraphNode::is_close_button_visible() const {
 
+bool GraphNode::is_close_button_visible() const {
 	return show_close;
 }
 
 void GraphNode::_connpos_update() {
+	int edgeofs = get_theme_constant("port_offset");
+	int sep = get_theme_constant("separation");
 
-	int edgeofs = get_constant("port_offset");
-	int sep = get_constant("separation");
-
-	Ref<StyleBox> sb = get_stylebox("frame");
+	Ref<StyleBox> sb = get_theme_stylebox("frame");
 	conn_input_cache.clear();
 	conn_output_cache.clear();
 	int vofs = 0;
@@ -476,18 +593,19 @@ void GraphNode::_connpos_update() {
 
 	for (int i = 0; i < get_child_count(); i++) {
 		Control *c = Object::cast_to<Control>(get_child(i));
-		if (!c)
+		if (!c) {
 			continue;
-		if (c->is_set_as_toplevel())
+		}
+		if (c->is_set_as_top_level()) {
 			continue;
+		}
 
 		Size2i size = c->get_combined_minimum_size();
 
-		int y = sb->get_margin(MARGIN_TOP) + vofs;
+		int y = sb->get_margin(SIDE_TOP) + vofs;
 		int h = size.y;
 
 		if (slot_info.has(idx)) {
-
 			if (slot_info[idx].enable_left) {
 				ConnCache cc;
 				cc.pos = Point2i(edgeofs, y + h / 2);
@@ -504,8 +622,7 @@ void GraphNode::_connpos_update() {
 			}
 		}
 
-		if (vofs > 0)
-			vofs += sep;
+		vofs += sep;
 		vofs += size.y;
 		idx++;
 	}
@@ -514,24 +631,25 @@ void GraphNode::_connpos_update() {
 }
 
 int GraphNode::get_connection_input_count() {
-
-	if (connpos_dirty)
+	if (connpos_dirty) {
 		_connpos_update();
+	}
 
 	return conn_input_cache.size();
 }
-int GraphNode::get_connection_output_count() {
 
-	if (connpos_dirty)
+int GraphNode::get_connection_output_count() {
+	if (connpos_dirty) {
 		_connpos_update();
+	}
 
 	return conn_output_cache.size();
 }
 
 Vector2 GraphNode::get_connection_input_position(int p_idx) {
-
-	if (connpos_dirty)
+	if (connpos_dirty) {
 		_connpos_update();
+	}
 
 	ERR_FAIL_INDEX_V(p_idx, conn_input_cache.size(), Vector2());
 	Vector2 pos = conn_input_cache[p_idx].pos;
@@ -541,27 +659,27 @@ Vector2 GraphNode::get_connection_input_position(int p_idx) {
 }
 
 int GraphNode::get_connection_input_type(int p_idx) {
-
-	if (connpos_dirty)
+	if (connpos_dirty) {
 		_connpos_update();
+	}
 
 	ERR_FAIL_INDEX_V(p_idx, conn_input_cache.size(), 0);
 	return conn_input_cache[p_idx].type;
 }
 
 Color GraphNode::get_connection_input_color(int p_idx) {
-
-	if (connpos_dirty)
+	if (connpos_dirty) {
 		_connpos_update();
+	}
 
 	ERR_FAIL_INDEX_V(p_idx, conn_input_cache.size(), Color());
 	return conn_input_cache[p_idx].color;
 }
 
 Vector2 GraphNode::get_connection_output_position(int p_idx) {
-
-	if (connpos_dirty)
+	if (connpos_dirty) {
 		_connpos_update();
+	}
 
 	ERR_FAIL_INDEX_V(p_idx, conn_output_cache.size(), Vector2());
 	Vector2 pos = conn_output_cache[p_idx].pos;
@@ -571,32 +689,29 @@ Vector2 GraphNode::get_connection_output_position(int p_idx) {
 }
 
 int GraphNode::get_connection_output_type(int p_idx) {
-
-	if (connpos_dirty)
+	if (connpos_dirty) {
 		_connpos_update();
+	}
 
 	ERR_FAIL_INDEX_V(p_idx, conn_output_cache.size(), 0);
 	return conn_output_cache[p_idx].type;
 }
 
 Color GraphNode::get_connection_output_color(int p_idx) {
-
-	if (connpos_dirty)
+	if (connpos_dirty) {
 		_connpos_update();
+	}
 
 	ERR_FAIL_INDEX_V(p_idx, conn_output_cache.size(), Color());
 	return conn_output_cache[p_idx].color;
 }
 
 void GraphNode::_gui_input(const Ref<InputEvent> &p_ev) {
-
 	Ref<InputEventMouseButton> mb = p_ev;
 	if (mb.is_valid()) {
-
-		ERR_FAIL_COND_MSG(get_parent_control() == NULL, "GraphNode must be the child of a GraphEdit node.");
+		ERR_FAIL_COND_MSG(get_parent_control() == nullptr, "GraphNode must be the child of a GraphEdit node.");
 
 		if (mb->is_pressed() && mb->get_button_index() == BUTTON_LEFT) {
-
 			Vector2 mpos = Vector2(mb->get_position().x, mb->get_position().y);
 			if (close_rect.size != Size2() && close_rect.has_point(mpos)) {
 				//send focus to parent
@@ -606,10 +721,9 @@ void GraphNode::_gui_input(const Ref<InputEvent> &p_ev) {
 				return;
 			}
 
-			Ref<Texture2D> resizer = get_icon("resizer");
+			Ref<Texture2D> resizer = get_theme_icon("resizer");
 
 			if (resizable && mpos.x > get_size().x - resizer->get_width() && mpos.y > get_size().y - resizer->get_height()) {
-
 				resizing = true;
 				resizing_from = mpos;
 				resizing_from_size = get_size();
@@ -636,42 +750,43 @@ void GraphNode::_gui_input(const Ref<InputEvent> &p_ev) {
 }
 
 void GraphNode::set_overlay(Overlay p_overlay) {
-
 	overlay = p_overlay;
 	update();
 }
 
 GraphNode::Overlay GraphNode::get_overlay() const {
-
 	return overlay;
 }
 
 void GraphNode::set_comment(bool p_enable) {
-
 	comment = p_enable;
 	update();
 }
 
 bool GraphNode::is_comment() const {
-
 	return comment;
 }
 
 void GraphNode::set_resizable(bool p_enable) {
-
 	resizable = p_enable;
 	update();
 }
 
 bool GraphNode::is_resizable() const {
-
 	return resizable;
 }
 
 void GraphNode::_bind_methods() {
-
 	ClassDB::bind_method(D_METHOD("set_title", "title"), &GraphNode::set_title);
 	ClassDB::bind_method(D_METHOD("get_title"), &GraphNode::get_title);
+	ClassDB::bind_method(D_METHOD("set_text_direction", "direction"), &GraphNode::set_text_direction);
+	ClassDB::bind_method(D_METHOD("get_text_direction"), &GraphNode::get_text_direction);
+	ClassDB::bind_method(D_METHOD("set_opentype_feature", "tag", "value"), &GraphNode::set_opentype_feature);
+	ClassDB::bind_method(D_METHOD("get_opentype_feature", "tag"), &GraphNode::get_opentype_feature);
+	ClassDB::bind_method(D_METHOD("clear_opentype_features"), &GraphNode::clear_opentype_features);
+	ClassDB::bind_method(D_METHOD("set_language", "language"), &GraphNode::set_language);
+	ClassDB::bind_method(D_METHOD("get_language"), &GraphNode::get_language);
+
 	ClassDB::bind_method(D_METHOD("_gui_input"), &GraphNode::_gui_input);
 
 	ClassDB::bind_method(D_METHOD("set_slot", "idx", "enable_left", "type_left", "color_left", "enable_right", "type_right", "color_right", "custom_left", "custom_right"), &GraphNode::set_slot, DEFVAL(Ref<Texture2D>()), DEFVAL(Ref<Texture2D>()));
@@ -684,8 +799,8 @@ void GraphNode::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_slot_type_right", "idx"), &GraphNode::get_slot_type_right);
 	ClassDB::bind_method(D_METHOD("get_slot_color_right", "idx"), &GraphNode::get_slot_color_right);
 
-	ClassDB::bind_method(D_METHOD("set_offset", "offset"), &GraphNode::set_offset);
-	ClassDB::bind_method(D_METHOD("get_offset"), &GraphNode::get_offset);
+	ClassDB::bind_method(D_METHOD("set_position_offset", "offset"), &GraphNode::set_position_offset);
+	ClassDB::bind_method(D_METHOD("get_position_offset"), &GraphNode::get_position_offset);
 
 	ClassDB::bind_method(D_METHOD("set_comment", "comment"), &GraphNode::set_comment);
 	ClassDB::bind_method(D_METHOD("is_comment"), &GraphNode::is_comment);
@@ -713,14 +828,16 @@ void GraphNode::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_overlay"), &GraphNode::get_overlay);
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "title"), "set_title", "get_title");
-	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "offset"), "set_offset", "get_offset");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "text_direction", PROPERTY_HINT_ENUM, "Auto,LTR,RTL,Inherited"), "set_text_direction", "get_text_direction");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "language"), "set_language", "get_language");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "position_offset"), "set_position_offset", "get_position_offset");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "show_close"), "set_show_close_button", "is_close_button_visible");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "resizable"), "set_resizable", "is_resizable");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "selected"), "set_selected", "is_selected");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "comment"), "set_comment", "is_comment");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "overlay", PROPERTY_HINT_ENUM, "Disabled,Breakpoint,Position"), "set_overlay", "get_overlay");
 
-	ADD_SIGNAL(MethodInfo("offset_changed"));
+	ADD_SIGNAL(MethodInfo("position_offset_changed"));
 	ADD_SIGNAL(MethodInfo("dragged", PropertyInfo(Variant::VECTOR2, "from"), PropertyInfo(Variant::VECTOR2, "to")));
 	ADD_SIGNAL(MethodInfo("raise_request"));
 	ADD_SIGNAL(MethodInfo("close_request"));
@@ -732,7 +849,7 @@ void GraphNode::_bind_methods() {
 }
 
 GraphNode::GraphNode() {
-
+	title_buf.instance();
 	overlay = OVERLAY_DISABLED;
 	show_close = false;
 	connpos_dirty = true;

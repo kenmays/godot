@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,7 +32,7 @@
 
 #include "core/os/os.h"
 #include "core/os/thread.h"
-#include "core/print_string.h"
+#include "core/string/print_string.h"
 
 #include <ConvectionKernels.h>
 
@@ -137,9 +137,9 @@ static void _digest_job_queue(void *p_job_queue) {
 }
 
 void image_compress_cvtt(Image *p_image, float p_lossy_quality, Image::UsedChannels p_channels) {
-
-	if (p_image->get_format() >= Image::FORMAT_BPTC_RGBA)
+	if (p_image->get_format() >= Image::FORMAT_BPTC_RGBA) {
 		return; //do not compress, already compressed
+	}
 
 	int w = p_image->get_width();
 	int h = p_image->get_height();
@@ -154,22 +154,24 @@ void image_compress_cvtt(Image *p_image, float p_lossy_quality, Image::UsedChann
 	cvtt::Options options;
 	uint32_t flags = cvtt::Flags::Fastest;
 
-	if (p_lossy_quality > 0.85)
+	if (p_lossy_quality > 0.85) {
 		flags = cvtt::Flags::Ultra;
-	else if (p_lossy_quality > 0.75)
+	} else if (p_lossy_quality > 0.75) {
 		flags = cvtt::Flags::Better;
-	else if (p_lossy_quality > 0.55)
+	} else if (p_lossy_quality > 0.55) {
 		flags = cvtt::Flags::Default;
-	else if (p_lossy_quality > 0.35)
+	} else if (p_lossy_quality > 0.35) {
 		flags = cvtt::Flags::Fast;
-	else if (p_lossy_quality > 0.15)
+	} else if (p_lossy_quality > 0.15) {
 		flags = cvtt::Flags::Faster;
+	}
 
 	flags |= cvtt::Flags::BC7_RespectPunchThrough;
 
-	if (p_channels == Image::USED_CHANNELS_RG) { //guessing this is a normalmap
+	if (p_channels == Image::USED_CHANNELS_RG) { //guessing this is a normal map
 		flags |= cvtt::Flags::Uniform;
 	}
+	options.flags = flags;
 
 	Image::Format target_format = Image::FORMAT_BPTC_RGBA;
 
@@ -222,7 +224,6 @@ void image_compress_cvtt(Image *p_image, float p_lossy_quality, Image::UsedChann
 	Vector<CVTTCompressionRowTask> tasks;
 
 	for (int i = 0; i <= mm_count; i++) {
-
 		int bw = w % 4 != 0 ? w + (4 - w % 4) : w;
 		int bh = h % 4 != 0 ? h + (4 - h % 4) : h;
 
@@ -266,12 +267,13 @@ void image_compress_cvtt(Image *p_image, float p_lossy_quality, Image::UsedChann
 		job_queue.num_tasks = static_cast<uint32_t>(tasks.size());
 
 		for (int i = 0; i < num_job_threads; i++) {
-			threads_wb[i] = Thread::create(_digest_job_queue, &job_queue);
+			threads_wb[i] = memnew(Thread);
+			threads_wb[i]->start(_digest_job_queue, &job_queue);
 		}
 		_digest_job_queue(&job_queue);
 
 		for (int i = 0; i < num_job_threads; i++) {
-			Thread::wait_to_finish(threads_wb[i]);
+			threads_wb[i]->wait_to_finish();
 			memdelete(threads_wb[i]);
 		}
 	}
@@ -280,7 +282,6 @@ void image_compress_cvtt(Image *p_image, float p_lossy_quality, Image::UsedChann
 }
 
 void image_decompress_cvtt(Image *p_image) {
-
 	Image::Format target_format;
 	bool is_signed = false;
 	bool is_hdr = false;
@@ -318,7 +319,6 @@ void image_decompress_cvtt(Image *p_image) {
 	int dst_ofs = 0;
 
 	for (int i = 0; i <= mm_count; i++) {
-
 		int src_ofs = p_image->get_mipmap_offset(i);
 
 		const uint8_t *in_bytes = &rb[src_ofs];

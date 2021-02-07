@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,7 +31,7 @@
 #ifndef MUTEX_H
 #define MUTEX_H
 
-#include "core/error_list.h"
+#include "core/error/error_list.h"
 #include "core/typedefs.h"
 
 #if !defined(NO_THREADS)
@@ -71,9 +71,21 @@ public:
 	}
 };
 
+using Mutex = MutexImpl<std::recursive_mutex>; // Recursive, for general use
+using BinaryMutex = MutexImpl<std::mutex>; // Non-recursive, handle with care
+
+extern template class MutexImpl<std::recursive_mutex>;
+extern template class MutexImpl<std::mutex>;
+extern template class MutexLock<MutexImpl<std::recursive_mutex>>;
+extern template class MutexLock<MutexImpl<std::mutex>>;
+
 #else
 
-template <class StdMutexType>
+class FakeMutex {
+	FakeMutex() {}
+};
+
+template <class MutexT>
 class MutexImpl {
 public:
 	_ALWAYS_INLINE_ void lock() const {}
@@ -87,14 +99,9 @@ public:
 	explicit MutexLock(const MutexT &p_mutex) {}
 };
 
+using Mutex = MutexImpl<FakeMutex>;
+using BinaryMutex = MutexImpl<FakeMutex>; // Non-recursive, handle with care
+
 #endif // !NO_THREADS
 
-using Mutex = MutexImpl<std::recursive_mutex>; // Recursive, for general use
-using BinaryMutex = MutexImpl<std::mutex>; // Non-recursive, handle with care
-
-extern template class MutexImpl<std::recursive_mutex>;
-extern template class MutexImpl<std::mutex>;
-extern template class MutexLock<MutexImpl<std::recursive_mutex> >;
-extern template class MutexLock<MutexImpl<std::mutex> >;
-
-#endif
+#endif // MUTEX_H

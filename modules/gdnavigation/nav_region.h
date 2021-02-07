@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -34,7 +34,7 @@
 #include "nav_rid.h"
 
 #include "nav_utils.h"
-#include "scene/3d/navigation.h"
+#include "scene/3d/navigation_3d.h"
 #include <vector>
 
 /**
@@ -45,17 +45,17 @@ class NavMap;
 class NavRegion;
 
 class NavRegion : public NavRid {
-	NavMap *map;
+	NavMap *map = nullptr;
 	Transform transform;
 	Ref<NavigationMesh> mesh;
 
-	bool polygons_dirty;
+	bool polygons_dirty = true;
 
 	/// Cache
 	std::vector<gd::Polygon> polygons;
 
 public:
-	NavRegion();
+	NavRegion() {}
 
 	void scratch_polygons() {
 		polygons_dirty = true;

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -30,13 +30,12 @@
 
 #include "position_2d.h"
 
-#include "core/engine.h"
+#include "core/config/engine.h"
 #include "scene/resources/texture.h"
 
 const float DEFAULT_GIZMO_EXTENTS = 10.0;
 
 void Position2D::_draw_cross() {
-
 	float extents = get_gizmo_extents();
 	// Colors taken from `axis_x_color` and `axis_y_color` (defined in `editor/editor_themes.cpp`)
 	draw_line(Point2(-extents, 0), Point2(+extents, 0), Color(0.96, 0.20, 0.32));
@@ -45,7 +44,6 @@ void Position2D::_draw_cross() {
 
 #ifdef TOOLS_ENABLED
 Rect2 Position2D::_edit_get_rect() const {
-
 	float extents = get_gizmo_extents();
 	return Rect2(Point2(-extents, -extents), Size2(extents * 2, extents * 2));
 }
@@ -56,18 +54,17 @@ bool Position2D::_edit_use_rect() const {
 #endif
 
 void Position2D::_notification(int p_what) {
-
 	switch (p_what) {
-
 		case NOTIFICATION_ENTER_TREE: {
-
 			update();
 		} break;
 		case NOTIFICATION_DRAW: {
-			if (!is_inside_tree())
+			if (!is_inside_tree()) {
 				break;
-			if (Engine::get_singleton()->is_editor_hint())
+			}
+			if (Engine::get_singleton()->is_editor_hint()) {
 				_draw_cross();
+			}
 
 		} break;
 	}
@@ -92,7 +89,6 @@ float Position2D::get_gizmo_extents() const {
 }
 
 void Position2D::_bind_methods() {
-
 	ClassDB::bind_method(D_METHOD("_set_gizmo_extents", "extents"), &Position2D::set_gizmo_extents);
 	ClassDB::bind_method(D_METHOD("_get_gizmo_extents"), &Position2D::get_gizmo_extents);
 

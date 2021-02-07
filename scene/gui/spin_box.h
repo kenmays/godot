@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -36,7 +36,6 @@
 #include "scene/main/timer.h"
 
 class SpinBox : public Range {
-
 	GDCLASS(SpinBox, Range);
 
 	LineEdit *line_edit;
@@ -46,18 +45,18 @@ class SpinBox : public Range {
 	void _range_click_timeout();
 
 	void _text_entered(const String &p_string);
-	virtual void _value_changed(double);
+	virtual void _value_changed(double) override;
 	String prefix;
 	String suffix;
 
 	void _line_edit_input(const Ref<InputEvent> &p_event);
 
 	struct Drag {
-		float base_val;
-		bool allowed;
-		bool enabled;
+		float base_val = 0;
+		bool allowed = false;
+		bool enabled = false;
 		Vector2 capture_pos;
-		float diff_y;
+		float diff_y = 0;
 	} drag;
 
 	void _line_edit_focus_exit();
@@ -74,7 +73,7 @@ protected:
 public:
 	LineEdit *get_line_edit();
 
-	virtual Size2 get_minimum_size() const;
+	virtual Size2 get_minimum_size() const override;
 
 	void set_align(LineEdit::Align p_align);
 	LineEdit::Align get_align() const;
