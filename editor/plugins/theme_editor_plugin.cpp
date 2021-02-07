@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -634,7 +634,7 @@ ThemeEditor::ThemeEditor() {
 	ScrollContainer *scroll = memnew(ScrollContainer);
 	add_child(scroll);
 	scroll->set_enable_v_scroll(true);
-	scroll->set_enable_h_scroll(false);
+	scroll->set_enable_h_scroll(true);
 	scroll->set_v_size_flags(SIZE_EXPAND_FILL);
 
 	MarginContainer *root_container = memnew(MarginContainer);

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,6 +32,7 @@
 
 #include "core/os/memory.h"
 #include "core/print_string.h"
+#include "core/project_settings.h"
 #include "core/string_builder.h"
 #include "rasterizer_gles2.h"
 #include "rasterizer_storage_gles2.h"
@@ -179,6 +180,12 @@ ShaderGLES2::Version *ShaderGLES2::get_current_version() {
 #ifdef JAVASCRIPT_ENABLED
 	strings.push_back("#define USE_HIGHP_PRECISION\n");
 #endif
+
+	if (GLOBAL_GET("rendering/gles2/compatibility/enable_high_float.Android")) {
+		// enable USE_HIGHP_PRECISION but safeguarded by an availability check as highp support is optional in GLES2
+		// see Section 4.5.4 of the GLSL_ES_Specification_1.00
+		strings.push_back("#ifdef GL_FRAGMENT_PRECISION_HIGH\n  #define USE_HIGHP_PRECISION\n#endif\n");
+	}
 
 #endif
 
@@ -820,27 +827,49 @@ void ShaderGLES2::use_material(void *p_material) {
 
 				case ShaderLanguage::TYPE_MAT4: {
 
-					Transform2D tr = V->get();
-					GLfloat matrix[16] = { /* build a 16x16 matrix */
-						tr.elements[0][0],
-						tr.elements[0][1],
-						0,
-						0,
-						tr.elements[1][0],
-						tr.elements[1][1],
-						0,
-						0,
-						0,
-						0,
-						1,
-						0,
-						tr.elements[2][0],
-						tr.elements[2][1],
-						0,
-						1
-					};
-
-					glUniformMatrix4fv(location, 1, GL_FALSE, matrix);
+					if (V->get().get_type() == Variant::TRANSFORM) {
+						Transform tr = V->get();
+						GLfloat matrix[16] = { /* build a 16x16 matrix */
+							tr.basis.elements[0][0],
+							tr.basis.elements[1][0],
+							tr.basis.elements[2][0],
+							0,
+							tr.basis.elements[0][1],
+							tr.basis.elements[1][1],
+							tr.basis.elements[2][1],
+							0,
+							tr.basis.elements[0][2],
+							tr.basis.elements[1][2],
+							tr.basis.elements[2][2],
+							0,
+							tr.origin.x,
+							tr.origin.y,
+							tr.origin.z,
+							1
+						};
+						glUniformMatrix4fv(location, 1, GL_FALSE, matrix);
+					} else {
+						Transform2D tr = V->get();
+						GLfloat matrix[16] = { /* build a 16x16 matrix */
+							tr.elements[0][0],
+							tr.elements[0][1],
+							0,
+							0,
+							tr.elements[1][0],
+							tr.elements[1][1],
+							0,
+							0,
+							0,
+							0,
+							1,
+							0,
+							tr.elements[2][0],
+							tr.elements[2][1],
+							0,
+							1
+						};
+						glUniformMatrix4fv(location, 1, GL_FALSE, matrix);
+					}
 
 				} break;
 

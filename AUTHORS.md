@@ -32,7 +32,6 @@ name is available.
     Alexey Khoroshavin (allkhor)
     Alket Rexhepi (alketii)
     Andrea Catania (AndreaCatania)
-    Andreas Haas (Hinsbart)
     Andrii Doroshenko (Xrayez)
     Andy Moss (MillionOstrich)
     Anish Bhobe (KidRigger)
@@ -58,7 +57,9 @@ name is available.
     Daniel J. Ramirez (djrm)
     Daniel Rakos (aqnuep)
     dankan1890
+    Danil Alexeev (dalexeev)
     David Sichma (DavidSichma)
+    David Snopek (dsnopek)
     Dharkael (lupoDharkael)
     Dmitry Koteroff (Krakean)
     Dominik Jasiński (dreamsComeTrue)
@@ -67,6 +68,7 @@ name is available.
     Emmanuel Leblond (touilleMan)
     Eoin O'Neill (Eoin-ONeill-Yokai)
     Eric Lasota (elasota)
+    Eric M (EricEzaM)
     Eric Rybicki (ericrybick)
     Erik Selecký (rxlecky)
     est31
@@ -97,7 +99,9 @@ name is available.
     Jakub Grzesik (kubecz3k)
     James Buck (jbuck3)
     Jérôme Gully (Nutriz)
+    Jia Jun Chai (SkyLucilfer)
     Joan Fons Sanchez (JFonS)
+    Johannes Witt (HaSa1002)
     Johan Manuel (29jm)
     Joshua Grams (JoshuaGrams)
     Juan Linietsky (reduz)
@@ -107,13 +111,17 @@ name is available.
     Kostadin Damyanov (Max-Might)
     K. S. Ernest (iFire) Lee (fire)
     lawnjelly
-    Leon Krause (eska014)
+    Leon Krause (leonkrause)
+    Liz Haas (27thLiz)
     Lucien Menassol (Kanabenki)
     m4nu3lf
+    Maganty Rushyendra (mrushyendra)
     Marcel Admiraal (madmiraal)
     Marcelo Fernandez (marcelofg55)
     Marc Gilleron (Zylann)
     Marcin Zawiejski (dragmz)
+    Marcus Brummer (mbrlabs)
+    Marcus (MCrafterzz)
     Mariano Javier Suligoy (MarianoGnu)
     Mario Schlack (hurikhan)
     Martin Capitanio (capnm)
@@ -122,6 +130,7 @@ name is available.
     marynate
     Masoud BH (masoudbh3)
     Mateo Kuruk Miccino (kuruk-mm)
+    Matthew (skyace65)
     Matthias Hölzl (hoelzl)
     Max Hilbrunner (mhilbrunner)
     merumelu
@@ -129,8 +138,10 @@ name is available.
     MichiRecRoom (LikeLakers2)
     mrezai
     muiroc
+    Nathan Lovato (NathanLovato)
     Nathan Warden (NathanWarden)
     Nils André-Chang (NilsIrl)
+    Noah Beard (TwistedTwigleg)
     Nuno Donato (nunodonato)
     Ovnuniarchos
     Pascal Richter (ShyRed)
@@ -154,12 +165,15 @@ name is available.
     Robin Hübner (profan)
     romulox-x
     Ruslan Mustakov (endragor)
+    Ryan Roden-Corrent (rrcore)
     Saniko (sanikoyes)
     santouits
     SaracenOne
+    Sergey Minakov (naithar)
     sersoong
     Shiqing (kawa-yoiko)
     Simon Wenner (swenner)
+    Stijn Hinlopen (hinlopen)
     Swarnim Arun (minraws)
     Thakee Nathees (ThakeeNathees)
     Theo Hallenius (TheoXD)

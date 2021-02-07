@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -1004,6 +1004,7 @@ Error Expression::_get_token(Token &r_token) {
 
 				return OK;
 			};
+			case '\'':
 			case '"': {
 
 				String str;
@@ -1015,7 +1016,8 @@ Error Expression::_get_token(Token &r_token) {
 						_set_error("Unterminated String");
 						r_token.type = TK_ERROR;
 						return ERR_PARSE_ERROR;
-					} else if (ch == '"') {
+					} else if (ch == cchar) {
+						// cchar contain a corresponding quote symbol
 						break;
 					} else if (ch == '\\') {
 						//escaped characters...
@@ -1852,7 +1854,7 @@ Expression::ENode *Expression::_parse_expression() {
 				}
 			}
 
-			//consecutively do unary opeators
+			//consecutively do unary operators
 			for (int i = expr_pos - 1; i >= next_op; i--) {
 
 				OperatorNode *op = alloc_node<OperatorNode>();

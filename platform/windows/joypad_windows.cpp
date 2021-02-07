@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -153,12 +153,12 @@ bool JoypadWindows::setup_dinput_joypad(const DIDEVICEINSTANCE *instance) {
 	if (have_device(instance->guidInstance) || num == -1)
 		return false;
 
-	d_joypads[joypad_count] = dinput_gamepad();
-	dinput_gamepad *joy = &d_joypads[joypad_count];
+	d_joypads[num] = dinput_gamepad();
+	dinput_gamepad *joy = &d_joypads[num];
 
 	const DWORD devtype = (instance->dwDevType & 0xFF);
 
-	if ((devtype != DI8DEVTYPE_JOYSTICK) && (devtype != DI8DEVTYPE_GAMEPAD) && (devtype != DI8DEVTYPE_1STPERSON)) {
+	if ((devtype != DI8DEVTYPE_JOYSTICK) && (devtype != DI8DEVTYPE_GAMEPAD) && (devtype != DI8DEVTYPE_1STPERSON) && (devtype != DI8DEVTYPE_DRIVING)) {
 		return false;
 	}
 
@@ -178,7 +178,8 @@ bool JoypadWindows::setup_dinput_joypad(const DIDEVICEINSTANCE *instance) {
 	WORD version = 0;
 	sprintf_s(uid, "%04x%04x%04x%04x%04x%04x%04x%04x", type, 0, vendor, 0, product, 0, version, 0);
 
-	id_to_change = joypad_count;
+	id_to_change = num;
+	slider_count = 0;
 
 	joy->di_joy->SetDataFormat(&c_dfDIJoystick2);
 	joy->di_joy->SetCooperativeLevel(*hWnd, DISCL_FOREGROUND);
@@ -202,7 +203,7 @@ void JoypadWindows::setup_joypad_object(const DIDEVICEOBJECTINSTANCE *ob, int p_
 		HRESULT res;
 		DIPROPRANGE prop_range;
 		DIPROPDWORD dilong;
-		DWORD ofs;
+		LONG ofs;
 		if (ob->guidType == GUID_XAxis)
 			ofs = DIJOFS_X;
 		else if (ob->guidType == GUID_YAxis)
@@ -215,9 +216,14 @@ void JoypadWindows::setup_joypad_object(const DIDEVICEOBJECTINSTANCE *ob, int p_
 			ofs = DIJOFS_RY;
 		else if (ob->guidType == GUID_RzAxis)
 			ofs = DIJOFS_RZ;
-		else if (ob->guidType == GUID_Slider)
-			ofs = DIJOFS_SLIDER(0);
-		else
+		else if (ob->guidType == GUID_Slider) {
+			if (slider_count < 2) {
+				ofs = DIJOFS_SLIDER(slider_count);
+				slider_count++;
+			} else {
+				return;
+			}
+		} else
 			return;
 		prop_range.diph.dwSize = sizeof(DIPROPRANGE);
 		prop_range.diph.dwHeaderSize = sizeof(DIPROPHEADER);
@@ -419,9 +425,9 @@ void JoypadWindows::process_joypads() {
 		}
 
 		// on mingw, these constants are not constants
-		int count = 6;
-		unsigned int axes[] = { DIJOFS_X, DIJOFS_Y, DIJOFS_Z, DIJOFS_RX, DIJOFS_RY, DIJOFS_RZ };
-		int values[] = { js.lX, js.lY, js.lZ, js.lRx, js.lRy, js.lRz };
+		int count = 8;
+		LONG axes[] = { DIJOFS_X, DIJOFS_Y, DIJOFS_Z, DIJOFS_RX, DIJOFS_RY, DIJOFS_RZ, (LONG)DIJOFS_SLIDER(0), (LONG)DIJOFS_SLIDER(1) };
+		int values[] = { js.lX, js.lY, js.lZ, js.lRx, js.lRy, js.lRz, js.rglSlider[0], js.rglSlider[1] };
 
 		for (int j = 0; j < joy->joy_axis.size(); j++) {
 

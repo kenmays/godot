@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -94,6 +94,18 @@ void EditorExportPreset::_get_property_list(List<PropertyInfo> *p_list) const {
 Ref<EditorExportPlatform> EditorExportPreset::get_platform() const {
 
 	return platform;
+}
+
+void EditorExportPreset::update_files_to_export() {
+	Vector<String> to_remove;
+	for (Set<String>::Element *E = selected_files.front(); E; E = E->next()) {
+		if (!FileAccess::exists(E->get())) {
+			to_remove.push_back(E->get());
+		}
+	}
+	for (int i = 0; i < to_remove.size(); ++i) {
+		selected_files.erase(to_remove[i]);
+	}
 }
 
 Vector<String> EditorExportPreset::get_files_to_export() const {
@@ -188,35 +200,6 @@ void EditorExportPreset::remove_export_file(const String &p_path) {
 bool EditorExportPreset::has_export_file(const String &p_path) {
 
 	return selected_files.has(p_path);
-}
-
-void EditorExportPreset::add_patch(const String &p_path, int p_at_pos) {
-
-	if (p_at_pos < 0)
-		patches.push_back(p_path);
-	else
-		patches.insert(p_at_pos, p_path);
-	EditorExport::singleton->save_presets();
-}
-
-void EditorExportPreset::remove_patch(int p_idx) {
-	patches.remove(p_idx);
-	EditorExport::singleton->save_presets();
-}
-
-void EditorExportPreset::set_patch(int p_index, const String &p_path) {
-	ERR_FAIL_INDEX(p_index, patches.size());
-	patches.write[p_index] = p_path;
-	EditorExport::singleton->save_presets();
-}
-String EditorExportPreset::get_patch(int p_index) {
-
-	ERR_FAIL_INDEX_V(p_index, patches.size(), String());
-	return patches[p_index];
-}
-
-Vector<String> EditorExportPreset::get_patches() const {
-	return patches;
 }
 
 void EditorExportPreset::set_custom_features(const String &p_custom_features) {
@@ -543,8 +526,16 @@ void EditorExportPlugin::add_ios_framework(const String &p_path) {
 	ios_frameworks.push_back(p_path);
 }
 
+void EditorExportPlugin::add_ios_embedded_framework(const String &p_path) {
+	ios_embedded_frameworks.push_back(p_path);
+}
+
 Vector<String> EditorExportPlugin::get_ios_frameworks() const {
 	return ios_frameworks;
+}
+
+Vector<String> EditorExportPlugin::get_ios_embedded_frameworks() const {
+	return ios_embedded_frameworks;
 }
 
 void EditorExportPlugin::add_ios_plist_content(const String &p_plist_content) {
@@ -628,6 +619,7 @@ void EditorExportPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("add_ios_project_static_lib", "path"), &EditorExportPlugin::add_ios_project_static_lib);
 	ClassDB::bind_method(D_METHOD("add_file", "path", "file", "remap"), &EditorExportPlugin::add_file);
 	ClassDB::bind_method(D_METHOD("add_ios_framework", "path"), &EditorExportPlugin::add_ios_framework);
+	ClassDB::bind_method(D_METHOD("add_ios_embedded_framework", "path"), &EditorExportPlugin::add_ios_embedded_framework);
 	ClassDB::bind_method(D_METHOD("add_ios_plist_content", "plist_content"), &EditorExportPlugin::add_ios_plist_content);
 	ClassDB::bind_method(D_METHOD("add_ios_linker_flags", "flags"), &EditorExportPlugin::add_ios_linker_flags);
 	ClassDB::bind_method(D_METHOD("add_ios_bundle_file", "path"), &EditorExportPlugin::add_ios_bundle_file);
@@ -712,6 +704,26 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 
 			_export_find_dependencies(files[i], paths);
 		}
+
+		// Add autoload resources and their dependencies
+		List<PropertyInfo> props;
+		ProjectSettings::get_singleton()->get_property_list(&props);
+
+		for (List<PropertyInfo>::Element *E = props.front(); E; E = E->next()) {
+			const PropertyInfo &pi = E->get();
+
+			if (!pi.name.begins_with("autoload/")) {
+				continue;
+			}
+
+			String autoload_path = ProjectSettings::get_singleton()->get(pi.name);
+
+			if (autoload_path.begins_with("*")) {
+				autoload_path = autoload_path.substr(1);
+			}
+
+			_export_find_dependencies(autoload_path, paths);
+		}
 	}
 
 	//add native icons to non-resource include list
@@ -720,6 +732,9 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 
 	_edit_filter_list(paths, p_preset->get_include_filter(), false);
 	_edit_filter_list(paths, p_preset->get_exclude_filter(), true);
+
+	// Ignore import files, since these are automatically added to the jar later with the resources
+	_edit_filter_list(paths, String("*.import"), true);
 
 	Vector<Ref<EditorExportPlugin> > export_plugins = EditorExport::get_singleton()->get_export_plugins();
 	for (int i = 0; i < export_plugins.size(); i++) {
@@ -926,6 +941,10 @@ Error EditorExportPlatform::_add_shared_object(void *p_userdata, const SharedObj
 Error EditorExportPlatform::save_pack(const Ref<EditorExportPreset> &p_preset, const String &p_path, Vector<SharedObject> *p_so_files, bool p_embed, int64_t *r_embedded_start, int64_t *r_embedded_size) {
 
 	EditorProgress ep("savepack", TTR("Packing"), 102, true);
+
+	// Create the temporary export directory if it doesn't exist.
+	DirAccessRef da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	da->make_dir_recursive(EditorSettings::get_singleton()->get_cache_dir());
 
 	String tmppath = EditorSettings::get_singleton()->get_cache_dir().plus_file("packtmp");
 	FileAccess *ftmp = FileAccess::open(tmppath, FileAccess::WRITE);
@@ -1200,7 +1219,6 @@ void EditorExport::_save() {
 		config->set_value(section, "include_filter", preset->get_include_filter());
 		config->set_value(section, "exclude_filter", preset->get_exclude_filter());
 		config->set_value(section, "export_path", preset->get_export_path());
-		config->set_value(section, "patch_list", preset->get_patches());
 		config->set_value(section, "script_export_mode", preset->get_script_export_mode());
 		config->set_value(section, "script_encryption_key", preset->get_script_encryption_key());
 
@@ -1271,6 +1289,30 @@ String EditorExportPlatform::test_etc2() const {
 			if (err != String())
 				err += "\n";
 			err += TTR("Target platform requires 'ETC' texture compression for the driver fallback to GLES2.\nEnable 'Import Etc' in Project Settings, or disable 'Driver Fallback Enabled'.");
+		}
+		return err;
+	}
+	return String();
+}
+
+String EditorExportPlatform::test_etc2_or_pvrtc() const {
+
+	String driver = ProjectSettings::get_singleton()->get("rendering/quality/driver/driver_name");
+	bool driver_fallback = ProjectSettings::get_singleton()->get("rendering/quality/driver/fallback_to_gles2");
+	bool etc2_supported = ProjectSettings::get_singleton()->get("rendering/vram_compression/import_etc2");
+	bool pvrtc_supported = ProjectSettings::get_singleton()->get("rendering/vram_compression/import_pvrtc");
+
+	if (driver == "GLES2" && !pvrtc_supported) {
+		return TTR("Target platform requires 'PVRTC' texture compression for GLES2. Enable 'Import Pvrtc' in Project Settings.");
+	} else if (driver == "GLES3") {
+		String err;
+		if (!etc2_supported && !pvrtc_supported) {
+			err += TTR("Target platform requires 'ETC2' or 'PVRTC' texture compression for GLES3. Enable 'Import Etc 2' or 'Import Pvrtc' in Project Settings.");
+		}
+		if (driver_fallback && !pvrtc_supported) {
+			if (err != String())
+				err += "\n";
+			err += TTR("Target platform requires 'PVRTC' texture compression for the driver fallback to GLES2.\nEnable 'Import Pvrtc' in Project Settings, or disable 'Driver Fallback Enabled'.");
 		}
 		return err;
 	}
@@ -1382,19 +1424,17 @@ void EditorExport::load_config() {
 			Vector<String> files = config->get_value(section, "export_files");
 
 			for (int i = 0; i < files.size(); i++) {
-				preset->add_export_file(files[i]);
+				if (!FileAccess::exists(files[i])) {
+					preset->remove_export_file(files[i]);
+				} else {
+					preset->add_export_file(files[i]);
+				}
 			}
 		}
 
 		preset->set_include_filter(config->get_value(section, "include_filter"));
 		preset->set_exclude_filter(config->get_value(section, "exclude_filter"));
 		preset->set_export_path(config->get_value(section, "export_path", ""));
-
-		Vector<String> patch_list = config->get_value(section, "patch_list");
-
-		for (int i = 0; i < patch_list.size(); i++) {
-			preset->add_patch(patch_list[i]);
-		}
 
 		if (config->has_section_key(section, "script_export_mode")) {
 			preset->set_script_export_mode(config->get_value(section, "script_export_mode"));
@@ -1518,16 +1558,17 @@ void EditorExportPlatformPC::get_preset_features(const Ref<EditorExportPreset> &
 }
 
 void EditorExportPlatformPC::get_export_options(List<ExportOption> *r_options) {
+	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/debug", PROPERTY_HINT_GLOBAL_FILE), ""));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/release", PROPERTY_HINT_GLOBAL_FILE), ""));
+
+	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "binary_format/64_bits"), true));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "binary_format/embed_pck"), false));
 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "texture_format/bptc"), false));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "texture_format/s3tc"), true));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "texture_format/etc"), false));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "texture_format/etc2"), false));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "texture_format/no_bptc_fallbacks"), true));
-	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "binary_format/64_bits"), true));
-	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "binary_format/embed_pck"), false));
-	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/release", PROPERTY_HINT_GLOBAL_FILE), ""));
-	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/debug", PROPERTY_HINT_GLOBAL_FILE), ""));
 }
 
 String EditorExportPlatformPC::get_name() const {

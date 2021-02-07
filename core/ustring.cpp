@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -535,33 +535,52 @@ signed char String::naturalnocasecmp_to(const String &p_str) const {
 		}
 
 		while (*this_str) {
-
-			if (!*that_str)
+			if (!*that_str) {
 				return 1;
-			else if (IS_DIGIT(*this_str)) {
-
-				int64_t this_int, that_int;
-
-				if (!IS_DIGIT(*that_str))
+			} else if (IS_DIGIT(*this_str)) {
+				if (!IS_DIGIT(*that_str)) {
 					return -1;
+				}
 
-				/* Compare the numbers */
-				this_int = to_int(this_str);
-				that_int = to_int(that_str);
+				// Keep ptrs to start of numerical sequences
+				const CharType *this_substr = this_str;
+				const CharType *that_substr = that_str;
 
-				if (this_int < that_int)
-					return -1;
-				else if (this_int > that_int)
-					return 1;
-
-				/* Skip */
-				while (IS_DIGIT(*this_str))
+				// Compare lengths of both numerical sequences, ignoring leading zeros
+				while (IS_DIGIT(*this_str)) {
 					this_str++;
-				while (IS_DIGIT(*that_str))
+				}
+				while (IS_DIGIT(*that_str)) {
 					that_str++;
-			} else if (IS_DIGIT(*that_str))
+				}
+				while (*this_substr == '0') {
+					this_substr++;
+				}
+				while (*that_substr == '0') {
+					that_substr++;
+				}
+				int this_len = this_str - this_substr;
+				int that_len = that_str - that_substr;
+
+				if (this_len < that_len) {
+					return -1;
+				} else if (this_len > that_len) {
+					return 1;
+				}
+
+				// If lengths equal, compare lexicographically
+				while (this_substr != this_str && that_substr != that_str) {
+					if (*this_substr < *that_substr) {
+						return -1;
+					} else if (*this_substr > *that_substr) {
+						return 1;
+					}
+					this_substr++;
+					that_substr++;
+				}
+			} else if (IS_DIGIT(*that_str)) {
 				return 1;
-			else {
+			} else {
 				if (_find_upper(*this_str) < _find_upper(*that_str)) //more than
 					return -1;
 				else if (_find_upper(*this_str) > _find_upper(*that_str)) //less than
@@ -1651,9 +1670,10 @@ String::String(const StrRange &p_range) {
 }
 
 int String::hex_to_int(bool p_with_prefix) const {
-
-	if (p_with_prefix && length() < 3)
+	int len = length();
+	if (len == 0 || (p_with_prefix && len < 3)) {
 		return 0;
+	}
 
 	const CharType *s = ptr();
 
@@ -1682,8 +1702,9 @@ int String::hex_to_int(bool p_with_prefix) const {
 		} else {
 			return 0;
 		}
-
-		ERR_FAIL_COND_V_MSG(hex > INT32_MAX / 16, sign == 1 ? INT32_MAX : INT32_MIN, "Cannot represent " + *this + " as integer, provided value is " + (sign == 1 ? "too big." : "too small."));
+		// Check for overflow/underflow, with special case to ensure INT32_MIN does not result in error
+		bool overflow = ((hex > INT32_MAX / 16) && (sign == 1 || (sign == -1 && hex != (INT32_MAX >> 4) + 1))) || (sign == -1 && hex == (INT32_MAX >> 4) + 1 && c > '0');
+		ERR_FAIL_COND_V_MSG(overflow, sign == 1 ? INT32_MAX : INT32_MIN, "Cannot represent " + *this + " as integer, provided value is " + (sign == 1 ? "too big." : "too small."));
 		hex *= 16;
 		hex += n;
 		s++;
@@ -1724,8 +1745,8 @@ int64_t String::hex_to_int64(bool p_with_prefix) const {
 		} else {
 			return 0;
 		}
-
-		ERR_FAIL_COND_V_MSG(hex > INT64_MAX / 16, sign == 1 ? INT64_MAX : INT64_MIN, "Cannot represent " + *this + " as 64-bit integer, provided value is " + (sign == 1 ? "too big." : "too small."));
+		bool overflow = ((hex > INT64_MAX / 16) && (sign == 1 || (sign == -1 && hex != (INT64_MAX >> 4) + 1))) || (sign == -1 && hex == (INT64_MAX >> 4) + 1 && c > '0');
+		ERR_FAIL_COND_V_MSG(overflow, sign == 1 ? INT64_MAX : INT64_MIN, "Cannot represent " + *this + " as 64-bit integer, provided value is " + (sign == 1 ? "too big." : "too small."));
 		hex *= 16;
 		hex += n;
 		s++;
@@ -1735,9 +1756,10 @@ int64_t String::hex_to_int64(bool p_with_prefix) const {
 }
 
 int64_t String::bin_to_int64(bool p_with_prefix) const {
-
-	if (p_with_prefix && length() < 3)
+	int len = length();
+	if (len == 0 || (p_with_prefix && len < 3)) {
 		return 0;
+	}
 
 	const CharType *s = ptr();
 
@@ -1764,8 +1786,9 @@ int64_t String::bin_to_int64(bool p_with_prefix) const {
 		} else {
 			return 0;
 		}
-
-		ERR_FAIL_COND_V_MSG(binary > INT64_MAX / 2, sign == 1 ? INT64_MAX : INT64_MIN, "Cannot represent " + *this + " as 64-bit integer, provided value is " + (sign == 1 ? "too big." : "too small."));
+		// Check for overflow/underflow, with special case to ensure INT64_MIN does not result in error
+		bool overflow = ((binary > INT64_MAX / 2) && (sign == 1 || (sign == -1 && binary != (INT64_MAX >> 1) + 1))) || (sign == -1 && binary == (INT64_MAX >> 1) + 1 && c > '0');
+		ERR_FAIL_COND_V_MSG(overflow, sign == 1 ? INT64_MAX : INT64_MIN, "Cannot represent " + *this + " as 64-bit integer, provided value is " + (sign == 1 ? "too big." : "too small."));
 		binary *= 2;
 		binary += n;
 		s++;
@@ -1788,8 +1811,8 @@ int String::to_int() const {
 
 		CharType c = operator[](i);
 		if (c >= '0' && c <= '9') {
-
-			ERR_FAIL_COND_V_MSG(integer > INT32_MAX / 10, sign == 1 ? INT32_MAX : INT32_MIN, "Cannot represent " + *this + " as integer, provided value is " + (sign == 1 ? "too big." : "too small."));
+			bool overflow = (integer > INT32_MAX / 10) || (integer == INT32_MAX / 10 && ((sign == 1 && c > '7') || (sign == -1 && c > '8')));
+			ERR_FAIL_COND_V_MSG(overflow, sign == 1 ? INT32_MAX : INT32_MIN, "Cannot represent " + *this + " as integer, provided value is " + (sign == 1 ? "too big." : "too small."));
 			integer *= 10;
 			integer += c - '0';
 
@@ -1813,16 +1836,14 @@ int64_t String::to_int64() const {
 	int64_t sign = 1;
 
 	for (int i = 0; i < to; i++) {
-
 		CharType c = operator[](i);
 		if (c >= '0' && c <= '9') {
-
-			ERR_FAIL_COND_V_MSG(integer > INT64_MAX / 10, sign == 1 ? INT64_MAX : INT64_MIN, "Cannot represent " + *this + " as 64-bit integer, provided value is " + (sign == 1 ? "too big." : "too small."));
+			bool overflow = (integer > INT64_MAX / 10) || (integer == INT64_MAX / 10 && ((sign == 1 && c > '7') || (sign == -1 && c > '8')));
+			ERR_FAIL_COND_V_MSG(overflow, sign == 1 ? INT64_MAX : INT64_MIN, "Cannot represent " + *this + " as 64-bit integer, provided value is " + (sign == 1 ? "too big." : "too small."));
 			integer *= 10;
 			integer += c - '0';
 
 		} else if (integer == 0 && c == '-') {
-
 			sign = -sign;
 		}
 	}
@@ -1847,8 +1868,8 @@ int String::to_int(const char *p_str, int p_len) {
 
 		char c = p_str[i];
 		if (c >= '0' && c <= '9') {
-
-			ERR_FAIL_COND_V_MSG(integer > INT32_MAX / 10, sign == 1 ? INT32_MAX : INT32_MIN, "Cannot represent " + String(p_str).substr(0, to) + " as integer, provided value is " + (sign == 1 ? "too big." : "too small."));
+			bool overflow = (integer > INT32_MAX / 10) || (integer == INT32_MAX / 10 && ((sign == 1 && c > '7') || (sign == -1 && c > '8')));
+			ERR_FAIL_COND_V_MSG(overflow, sign == 1 ? INT32_MAX : INT32_MIN, "Cannot represent " + String(p_str).substr(0, to) + " as integer, provided value is " + (sign == 1 ? "too big." : "too small."));
 			integer *= 10;
 			integer += c - '0';
 
@@ -2690,10 +2711,15 @@ int String::rfindn(const String &p_str, int p_from) const {
 
 bool String::ends_with(const String &p_string) const {
 
+	int l = p_string.length();
+	if (l == 0) {
+		return true;
+	}
+
 	int pos = find_last(p_string);
 	if (pos == -1)
 		return false;
-	return pos + p_string.length() == length();
+	return pos + l == length();
 }
 
 bool String::begins_with(const String &p_string) const {
@@ -3071,6 +3097,7 @@ String String::repeat(int p_count) const {
 	const CharType *src = this->c_str();
 
 	new_string.resize(length() * p_count + 1);
+	new_string[length() * p_count] = 0;
 
 	for (int i = 0; i < p_count; i++)
 		for (int j = 0; j < length(); j++)
@@ -3950,7 +3977,10 @@ bool String::is_rel_path() const {
 
 String String::get_base_dir() const {
 
-	int basepos = find("://");
+	int basepos = find(":/");
+	if (basepos == -1) {
+		basepos = find(":\\");
+	}
 	String rs;
 	String base;
 	if (basepos != -1) {
@@ -4181,11 +4211,12 @@ String String::sprintf(const Array &values, bool *error) const {
 					int number_len = str.length();
 
 					// Padding.
+					int pad_chars_count = (value < 0 || show_sign) ? min_chars - 1 : min_chars;
 					String pad_char = pad_with_zeroes ? String("0") : String(" ");
 					if (left_justified) {
-						str = str.rpad(min_chars, pad_char);
+						str = str.rpad(pad_chars_count, pad_char);
 					} else {
-						str = str.lpad(min_chars, pad_char);
+						str = str.lpad(pad_chars_count, pad_char);
 					}
 
 					// Sign.
@@ -4211,27 +4242,40 @@ String String::sprintf(const Array &values, bool *error) const {
 					}
 
 					double value = values[value_index];
-					String str = String::num(value, min_decimals);
+					bool is_negative = (value < 0);
+					String str = String::num(ABS(value), min_decimals);
 
 					// Pad decimals out.
 					str = str.pad_decimals(min_decimals);
 
-					// Show sign
-					if (show_sign && str.left(1) != "-") {
-						str = str.insert(0, "+");
+					int initial_len = str.length();
+
+					// Padding. Leave room for sign later if required.
+					int pad_chars_count = (is_negative || show_sign) ? min_chars - 1 : min_chars;
+					String pad_char = pad_with_zeroes ? String("0") : String(" ");
+					if (left_justified) {
+						if (pad_with_zeroes) {
+							return "left justification cannot be used with zeros as the padding";
+						} else {
+							str = str.rpad(pad_chars_count, pad_char);
+						}
+					} else {
+						str = str.lpad(pad_chars_count, pad_char);
 					}
 
-					// Padding
-					if (left_justified) {
-						str = str.rpad(min_chars);
-					} else {
-						str = str.lpad(min_chars);
+					// Add sign if needed.
+					if (show_sign || is_negative) {
+						String sign_char = is_negative ? "-" : "+";
+						if (left_justified) {
+							str = str.insert(0, sign_char);
+						} else {
+							str = str.insert(pad_with_zeroes ? 0 : str.length() - initial_len, sign_char);
+						}
 					}
 
 					formatted += str;
 					++value_index;
 					in_format = false;
-
 					break;
 				}
 				case 's': { // String

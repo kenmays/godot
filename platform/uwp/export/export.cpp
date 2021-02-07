@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -263,7 +263,7 @@ void AppxPackager::make_content_types(const String &p_path) {
 
 	for (int i = 0; i < file_metadata.size(); i++) {
 
-		String ext = file_metadata[i].name.get_extension();
+		String ext = file_metadata[i].name.get_extension().to_lower();
 
 		if (types.has(ext)) continue;
 
@@ -747,22 +747,7 @@ class EditorExportPlatformUWP : public EditorExportPlatform {
 
 		// TODO: Add resource creation or image rescaling to enable other scales:
 		// 1.25, 1.5, 2.0
-		real_t scales[] = { 1.0 };
-		bool valid_w = false;
-		bool valid_h = false;
-
-		for (int i = 0; i < 1; i++) {
-
-			int w = ceil(p_width * scales[i]);
-			int h = ceil(p_height * scales[i]);
-
-			if (w == p_image->get_width())
-				valid_w = true;
-			if (h == p_image->get_height())
-				valid_h = true;
-		}
-
-		return valid_w && valid_h;
+		return p_width == p_image->get_width() && p_height == p_image->get_height();
 	}
 
 	Vector<uint8_t> _fix_manifest(const Ref<EditorExportPreset> &p_preset, const Vector<uint8_t> &p_template, bool p_give_internet) const {
@@ -781,7 +766,7 @@ class EditorExportPlatformUWP : public EditorExportPlatform {
 		result = result.replace("$version_string$", version);
 
 		Platform arch = (Platform)(int)p_preset->get("architecture/target");
-		String architecture = arch == ARM ? "arm" : arch == X86 ? "x86" : "x64";
+		String architecture = arch == ARM ? "arm" : (arch == X86 ? "x86" : "x64");
 		result = result.replace("$architecture$", architecture);
 
 		result = result.replace("$display_name$", String(p_preset->get("package/display_name")).empty() ? (String)ProjectSettings::get_singleton()->get("application/config/name") : String(p_preset->get("package/display_name")));
@@ -992,7 +977,7 @@ class EditorExportPlatformUWP : public EditorExportPlatform {
 
 public:
 	virtual String get_name() const {
-		return "Windows Universal";
+		return "UWP";
 	}
 	virtual String get_os_name() const {
 		return "UWP";
@@ -1025,6 +1010,9 @@ public:
 	}
 
 	virtual void get_export_options(List<ExportOption> *r_options) {
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/debug", PROPERTY_HINT_GLOBAL_FILE, "*.zip"), ""));
+		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/release", PROPERTY_HINT_GLOBAL_FILE, "*.zip"), ""));
+
 		r_options->push_back(ExportOption(PropertyInfo(Variant::INT, "architecture/target", PROPERTY_HINT_ENUM, "arm,x86,x64"), 1));
 
 		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "command_line/extra_args"), ""));
@@ -1065,9 +1053,6 @@ public:
 		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "tiles/show_name_on_square150x150"), false));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "tiles/show_name_on_wide310x150"), false));
 		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "tiles/show_name_on_square310x310"), false));
-
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/debug", PROPERTY_HINT_GLOBAL_FILE, "*.zip"), ""));
-		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/release", PROPERTY_HINT_GLOBAL_FILE, "*.zip"), ""));
 
 		// Capabilities
 		const char **basic = uwp_capabilities;
@@ -1204,7 +1189,7 @@ public:
 
 		String src_appx;
 
-		EditorProgress ep("export", "Exporting for Windows Universal", 7, true);
+		EditorProgress ep("export", "Exporting for UWP", 7, true);
 
 		if (p_debug)
 			src_appx = p_preset->get("custom_template/debug");

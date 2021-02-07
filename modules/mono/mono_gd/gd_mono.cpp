@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -521,8 +521,8 @@ void GDMono::add_assembly(uint32_t p_domain_id, GDMonoAssembly *p_assembly) {
 
 GDMonoAssembly *GDMono::get_loaded_assembly(const String &p_name) {
 
-	if (p_name == "mscorlib")
-		return get_corlib_assembly();
+	if (p_name == "mscorlib" && corlib_assembly)
+		return corlib_assembly;
 
 	MonoDomain *domain = mono_domain_get();
 	uint32_t domain_id = domain ? mono_domain_get_id(domain) : 0;
@@ -532,7 +532,9 @@ GDMonoAssembly *GDMono::get_loaded_assembly(const String &p_name) {
 
 bool GDMono::load_assembly(const String &p_name, GDMonoAssembly **r_assembly, bool p_refonly) {
 
+#ifdef DEBUG_ENABLED
 	CRASH_COND(!r_assembly);
+#endif
 
 	MonoAssemblyName *aname = mono_assembly_name_new(p_name.utf8());
 	bool result = load_assembly(p_name, aname, r_assembly, p_refonly);
@@ -544,26 +546,27 @@ bool GDMono::load_assembly(const String &p_name, GDMonoAssembly **r_assembly, bo
 
 bool GDMono::load_assembly(const String &p_name, MonoAssemblyName *p_aname, GDMonoAssembly **r_assembly, bool p_refonly) {
 
+#ifdef DEBUG_ENABLED
 	CRASH_COND(!r_assembly);
+#endif
+
+	return load_assembly(p_name, p_aname, r_assembly, p_refonly, GDMonoAssembly::get_default_search_dirs());
+}
+
+bool GDMono::load_assembly(const String &p_name, MonoAssemblyName *p_aname, GDMonoAssembly **r_assembly, bool p_refonly, const Vector<String> &p_search_dirs) {
+
+#ifdef DEBUG_ENABLED
+	CRASH_COND(!r_assembly);
+#endif
 
 	print_verbose("Mono: Loading assembly " + p_name + (p_refonly ? " (refonly)" : "") + "...");
 
-	MonoImageOpenStatus status = MONO_IMAGE_OK;
-	MonoAssembly *assembly = mono_assembly_load_full(p_aname, NULL, &status, p_refonly);
+	GDMonoAssembly *assembly = GDMonoAssembly::load(p_name, p_aname, p_refonly, p_search_dirs);
 
 	if (!assembly)
 		return false;
 
-	ERR_FAIL_COND_V(status != MONO_IMAGE_OK, false);
-
-	uint32_t domain_id = mono_domain_get_id(mono_domain_get());
-
-	GDMonoAssembly **stored_assembly = assemblies[domain_id].getptr(p_name);
-
-	ERR_FAIL_COND_V(stored_assembly == NULL, false);
-	ERR_FAIL_COND_V((*stored_assembly)->get_assembly() != assembly, false);
-
-	*r_assembly = *stored_assembly;
+	*r_assembly = assembly;
 
 	print_verbose("Mono: Assembly " + p_name + (p_refonly ? " (refonly)" : "") + " loaded from path: " + (*r_assembly)->get_path());
 
@@ -592,8 +595,8 @@ ApiAssemblyInfo::Version ApiAssemblyInfo::Version::get_from_loaded_assembly(GDMo
 	ApiAssemblyInfo::Version api_assembly_version;
 
 	const char *nativecalls_name = p_api_type == ApiAssemblyInfo::API_CORE ?
-										   BINDINGS_CLASS_NATIVECALLS :
-										   BINDINGS_CLASS_NATIVECALLS_EDITOR;
+											 BINDINGS_CLASS_NATIVECALLS :
+											 BINDINGS_CLASS_NATIVECALLS_EDITOR;
 
 	GDMonoClass *nativecalls_klass = p_api_assembly->get_class(BINDINGS_NAMESPACE, nativecalls_name);
 
@@ -751,11 +754,11 @@ String GDMono::update_api_assemblies_from_prebuilt(const String &p_config, const
 #define FAIL_REASON(m_out_of_sync, m_prebuilt_exists)                            \
 	(                                                                            \
 			(m_out_of_sync ?                                                     \
-							String("The assembly is invalidated ") :             \
-							String("The assembly was not found ")) +             \
+							  String("The assembly is invalidated ") :             \
+							  String("The assembly was not found ")) +             \
 			(m_prebuilt_exists ?                                                 \
-							String("and the prebuilt assemblies are missing.") : \
-							String("and we failed to copy the prebuilt assemblies.")))
+							  String("and the prebuilt assemblies are missing.") : \
+							  String("and we failed to copy the prebuilt assemblies.")))
 
 	String dst_assemblies_dir = GodotSharpDirs::get_res_assemblies_base_dir().plus_file(p_config);
 
@@ -813,8 +816,8 @@ bool GDMono::_load_core_api_assembly(LoadedApiAssembly &r_loaded_api_assembly, c
 
 	// If running the project manager, load it from the prebuilt API directory
 	String assembly_dir = !Main::is_project_manager() ?
-								  GodotSharpDirs::get_res_assemblies_base_dir().plus_file(p_config) :
-								  GodotSharpDirs::get_data_editor_prebuilt_api_dir().plus_file(p_config);
+									GodotSharpDirs::get_res_assemblies_base_dir().plus_file(p_config) :
+									GodotSharpDirs::get_data_editor_prebuilt_api_dir().plus_file(p_config);
 
 	String assembly_path = assembly_dir.plus_file(CORE_API_ASSEMBLY_NAME ".dll");
 
@@ -846,8 +849,8 @@ bool GDMono::_load_editor_api_assembly(LoadedApiAssembly &r_loaded_api_assembly,
 
 	// If running the project manager, load it from the prebuilt API directory
 	String assembly_dir = !Main::is_project_manager() ?
-								  GodotSharpDirs::get_res_assemblies_base_dir().plus_file(p_config) :
-								  GodotSharpDirs::get_data_editor_prebuilt_api_dir().plus_file(p_config);
+									GodotSharpDirs::get_res_assemblies_base_dir().plus_file(p_config) :
+									GodotSharpDirs::get_data_editor_prebuilt_api_dir().plus_file(p_config);
 
 	String assembly_path = assembly_dir.plus_file(EDITOR_API_ASSEMBLY_NAME ".dll");
 

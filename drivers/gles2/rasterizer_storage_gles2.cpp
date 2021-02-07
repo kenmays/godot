@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -78,6 +78,9 @@ GLuint RasterizerStorageGLES2::system_fbo = 0;
 #endif
 
 #define _EXT_TEXTURE_CUBE_MAP_SEAMLESS 0x884F
+
+#define _GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
+#define _GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
 
 #define _RED_OES 0x1903
 
@@ -682,7 +685,7 @@ void RasterizerStorageGLES2::texture_set_data(RID p_texture, const Ref<Image> &p
 		if (img == p_image) {
 			img = img->duplicate();
 		}
-		img->resize_to_po2(false);
+		img->resize_to_po2(false, texture->flags & VS::TEXTURE_FLAG_FILTER ? Image::INTERPOLATE_BILINEAR : Image::INTERPOLATE_NEAREST);
 	}
 
 	if (config.shrink_textures_x2 && (p_image->has_mipmaps() || !p_image->is_compressed()) && !(texture->flags & VS::TEXTURE_FLAG_USED_FOR_STREAMING)) {
@@ -711,7 +714,11 @@ void RasterizerStorageGLES2::texture_set_data(RID p_texture, const Ref<Image> &p
 	texture->ignore_mipmaps = compressed && !img->has_mipmaps();
 
 	if ((texture->flags & VS::TEXTURE_FLAG_MIPMAPS) && !texture->ignore_mipmaps)
-		glTexParameteri(texture->target, GL_TEXTURE_MIN_FILTER, config.use_fast_texture_filter ? GL_LINEAR_MIPMAP_NEAREST : GL_LINEAR_MIPMAP_LINEAR);
+		if (texture->flags & VS::TEXTURE_FLAG_FILTER) {
+			glTexParameteri(texture->target, GL_TEXTURE_MIN_FILTER, config.use_fast_texture_filter ? GL_LINEAR_MIPMAP_NEAREST : GL_LINEAR_MIPMAP_LINEAR);
+		} else {
+			glTexParameteri(texture->target, GL_TEXTURE_MIN_FILTER, config.use_fast_texture_filter ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_LINEAR);
+		}
 	else {
 		if (texture->flags & VS::TEXTURE_FLAG_FILTER) {
 			glTexParameteri(texture->target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -743,6 +750,16 @@ void RasterizerStorageGLES2::texture_set_data(RID p_texture, const Ref<Image> &p
 		//glTexParameterf( texture->target, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE );
 		glTexParameterf(texture->target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameterf(texture->target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	}
+
+	if (config.use_anisotropic_filter) {
+
+		if (texture->flags & VS::TEXTURE_FLAG_ANISOTROPIC_FILTER) {
+
+			glTexParameterf(texture->target, _GL_TEXTURE_MAX_ANISOTROPY_EXT, config.anisotropic_level);
+		} else {
+			glTexParameterf(texture->target, _GL_TEXTURE_MAX_ANISOTROPY_EXT, 1);
+		}
 	}
 
 	int mipmaps = ((texture->flags & VS::TEXTURE_FLAG_MIPMAPS) && img->has_mipmaps()) ? img->get_mipmap_count() + 1 : 1;
@@ -953,11 +970,25 @@ void RasterizerStorageGLES2::texture_set_flags(RID p_texture, uint32_t p_flags) 
 		glTexParameterf(texture->target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	}
 
+	if (config.use_anisotropic_filter) {
+
+		if (texture->flags & VS::TEXTURE_FLAG_ANISOTROPIC_FILTER) {
+
+			glTexParameterf(texture->target, _GL_TEXTURE_MAX_ANISOTROPY_EXT, config.anisotropic_level);
+		} else {
+			glTexParameterf(texture->target, _GL_TEXTURE_MAX_ANISOTROPY_EXT, 1);
+		}
+	}
+
 	if ((texture->flags & VS::TEXTURE_FLAG_MIPMAPS) && !texture->ignore_mipmaps) {
 		if (!had_mipmaps && texture->mipmaps == 1) {
 			glGenerateMipmap(texture->target);
 		}
-		glTexParameteri(texture->target, GL_TEXTURE_MIN_FILTER, config.use_fast_texture_filter ? GL_LINEAR_MIPMAP_NEAREST : GL_LINEAR_MIPMAP_LINEAR);
+		if (texture->flags & VS::TEXTURE_FLAG_FILTER) {
+			glTexParameteri(texture->target, GL_TEXTURE_MIN_FILTER, config.use_fast_texture_filter ? GL_LINEAR_MIPMAP_NEAREST : GL_LINEAR_MIPMAP_LINEAR);
+		} else {
+			glTexParameteri(texture->target, GL_TEXTURE_MIN_FILTER, config.use_fast_texture_filter ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_LINEAR);
+		}
 
 	} else {
 		if (texture->flags & VS::TEXTURE_FLAG_FILTER) {
@@ -1268,11 +1299,8 @@ void RasterizerStorageGLES2::sky_set_texture(RID p_sky, RID p_panorama, int p_ra
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, resources.mipmap_blur_color, 0);
 
 		if (lod == 1) {
-			//bind panorama for smaller lods
-
-			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_CUBE_MAP, sky->radiance);
-			shaders.cubemap_filter.set_conditional(CubemapFilterShaderGLES2::USE_SOURCE_PANORAMA, false);
+			// We set USE_DIRECT_WRITE to false for LOD levels 1 and up, so the shader will properly
+			// filter the roughness instead of just copying 1:1 from the source panorama.
 			shaders.cubemap_filter.set_conditional(CubemapFilterShaderGLES2::USE_DIRECT_WRITE, false);
 			shaders.cubemap_filter.bind();
 		}
@@ -1426,8 +1454,13 @@ void RasterizerStorageGLES2::_update_shader(Shader *p_shader) const {
 			p_shader->canvas_item.uses_time = false;
 			p_shader->canvas_item.uses_modulate = false;
 			p_shader->canvas_item.uses_color = false;
-			p_shader->canvas_item.reads_vertex = false;
+			p_shader->canvas_item.uses_vertex = false;
 			p_shader->canvas_item.batch_flags = 0;
+
+			p_shader->canvas_item.uses_world_matrix = false;
+			p_shader->canvas_item.uses_extra_matrix = false;
+			p_shader->canvas_item.uses_projection_matrix = false;
+			p_shader->canvas_item.uses_instance_custom = false;
 
 			shaders.actions_canvas.render_mode_values["blend_add"] = Pair<int *, int>(&p_shader->canvas_item.blend_mode, Shader::CanvasItem::BLEND_MODE_ADD);
 			shaders.actions_canvas.render_mode_values["blend_mix"] = Pair<int *, int>(&p_shader->canvas_item.blend_mode, Shader::CanvasItem::BLEND_MODE_MIX);
@@ -1445,7 +1478,12 @@ void RasterizerStorageGLES2::_update_shader(Shader *p_shader) const {
 			shaders.actions_canvas.usage_flag_pointers["MODULATE"] = &p_shader->canvas_item.uses_modulate;
 			shaders.actions_canvas.usage_flag_pointers["COLOR"] = &p_shader->canvas_item.uses_color;
 
-			shaders.actions_canvas.read_flag_pointers["VERTEX"] = &p_shader->canvas_item.reads_vertex;
+			shaders.actions_canvas.usage_flag_pointers["VERTEX"] = &p_shader->canvas_item.uses_vertex;
+
+			shaders.actions_canvas.usage_flag_pointers["WORLD_MATRIX"] = &p_shader->canvas_item.uses_world_matrix;
+			shaders.actions_canvas.usage_flag_pointers["EXTRA_MATRIX"] = &p_shader->canvas_item.uses_extra_matrix;
+			shaders.actions_canvas.usage_flag_pointers["PROJECTION_MATRIX"] = &p_shader->canvas_item.uses_projection_matrix;
+			shaders.actions_canvas.usage_flag_pointers["INSTANCE_CUSTOM"] = &p_shader->canvas_item.uses_instance_custom;
 
 			actions = &shaders.actions_canvas;
 			actions->uniforms = &p_shader->uniforms;
@@ -1466,6 +1504,8 @@ void RasterizerStorageGLES2::_update_shader(Shader *p_shader) const {
 			p_shader->spatial.uses_screen_texture = false;
 			p_shader->spatial.uses_depth_texture = false;
 			p_shader->spatial.uses_vertex = false;
+			p_shader->spatial.uses_tangent = false;
+			p_shader->spatial.uses_ensure_correct_normals = false;
 			p_shader->spatial.writes_modelview_or_projection = false;
 			p_shader->spatial.uses_world_coordinates = false;
 
@@ -1490,6 +1530,8 @@ void RasterizerStorageGLES2::_update_shader(Shader *p_shader) const {
 
 			shaders.actions_scene.render_mode_flags["world_vertex_coords"] = &p_shader->spatial.uses_world_coordinates;
 
+			shaders.actions_scene.render_mode_flags["ensure_correct_normals"] = &p_shader->spatial.uses_ensure_correct_normals;
+
 			shaders.actions_scene.usage_flag_pointers["ALPHA"] = &p_shader->spatial.uses_alpha;
 			shaders.actions_scene.usage_flag_pointers["ALPHA_SCISSOR"] = &p_shader->spatial.uses_alpha_scissor;
 
@@ -1498,6 +1540,11 @@ void RasterizerStorageGLES2::_update_shader(Shader *p_shader) const {
 			shaders.actions_scene.usage_flag_pointers["SCREEN_TEXTURE"] = &p_shader->spatial.uses_screen_texture;
 			shaders.actions_scene.usage_flag_pointers["DEPTH_TEXTURE"] = &p_shader->spatial.uses_depth_texture;
 			shaders.actions_scene.usage_flag_pointers["TIME"] = &p_shader->spatial.uses_time;
+
+			// Use of any of these BUILTINS indicate the need for transformed tangents.
+			// This is needed to know when to transform tangents in software skinning.
+			shaders.actions_scene.usage_flag_pointers["TANGENT"] = &p_shader->spatial.uses_tangent;
+			shaders.actions_scene.usage_flag_pointers["NORMALMAP"] = &p_shader->spatial.uses_tangent;
 
 			shaders.actions_scene.write_flag_pointers["MODELVIEW_MATRIX"] = &p_shader->spatial.writes_modelview_or_projection;
 			shaders.actions_scene.write_flag_pointers["PROJECTION_MATRIX"] = &p_shader->spatial.writes_modelview_or_projection;
@@ -1536,10 +1583,13 @@ void RasterizerStorageGLES2::_update_shader(Shader *p_shader) const {
 	// some logic for batching
 	if (p_shader->mode == VS::SHADER_CANVAS_ITEM) {
 		if (p_shader->canvas_item.uses_modulate | p_shader->canvas_item.uses_color) {
-			p_shader->canvas_item.batch_flags |= Shader::CanvasItem::PREVENT_COLOR_BAKING;
+			p_shader->canvas_item.batch_flags |= RasterizerStorageCommon::PREVENT_COLOR_BAKING;
 		}
-		if (p_shader->canvas_item.reads_vertex) {
-			p_shader->canvas_item.batch_flags |= Shader::CanvasItem::PREVENT_VERTEX_BAKING;
+		if (p_shader->canvas_item.uses_vertex) {
+			p_shader->canvas_item.batch_flags |= RasterizerStorageCommon::PREVENT_VERTEX_BAKING;
+		}
+		if (p_shader->canvas_item.uses_world_matrix | p_shader->canvas_item.uses_extra_matrix | p_shader->canvas_item.uses_projection_matrix | p_shader->canvas_item.uses_instance_custom) {
+			p_shader->canvas_item.batch_flags |= RasterizerStorageCommon::PREVENT_ITEM_JOINING;
 		}
 	}
 
@@ -1746,12 +1796,12 @@ void RasterizerStorageGLES2::shader_get_custom_defines(RID p_shader, Vector<Stri
 	shader->shader->get_custom_defines(p_defines);
 }
 
-void RasterizerStorageGLES2::shader_clear_custom_defines(RID p_shader) {
+void RasterizerStorageGLES2::shader_remove_custom_define(RID p_shader, const String &p_define) {
 
 	Shader *shader = shader_owner.get(p_shader);
 	ERR_FAIL_COND(!shader);
 
-	shader->shader->clear_custom_defines();
+	shader->shader->remove_custom_define(p_define);
 
 	_shader_make_dirty(shader);
 }
@@ -1888,6 +1938,36 @@ bool RasterizerStorageGLES2::material_casts_shadows(RID p_material) {
 	}
 
 	return casts_shadows;
+}
+
+bool RasterizerStorageGLES2::material_uses_tangents(RID p_material) {
+	Material *material = material_owner.get(p_material);
+	ERR_FAIL_COND_V(!material, false);
+
+	if (!material->shader) {
+		return false;
+	}
+
+	if (material->shader->dirty_list.in_list()) {
+		_update_shader(material->shader);
+	}
+
+	return material->shader->spatial.uses_tangent;
+}
+
+bool RasterizerStorageGLES2::material_uses_ensure_correct_normals(RID p_material) {
+	Material *material = material_owner.get(p_material);
+	ERR_FAIL_COND_V(!material, false);
+
+	if (!material->shader) {
+		return false;
+	}
+
+	if (material->shader->dirty_list.in_list()) {
+		_update_shader(material->shader);
+	}
+
+	return material->shader->spatial.uses_ensure_correct_normals;
 }
 
 void RasterizerStorageGLES2::material_add_instance_owner(RID p_material, RasterizerScene::InstanceBase *p_instance) {
@@ -2668,9 +2748,7 @@ PoolVector<uint8_t> RasterizerStorageGLES2::mesh_surface_get_array(RID p_mesh, i
 	ERR_FAIL_INDEX_V(p_surface, mesh->surfaces.size(), PoolVector<uint8_t>());
 
 	Surface *surface = mesh->surfaces[p_surface];
-#ifndef TOOLS_ENABLED
-	ERR_PRINT("OpenGL ES 2.0 does not allow retrieving mesh array data");
-#endif
+
 	return surface->data;
 }
 
@@ -2714,7 +2792,7 @@ Vector<PoolVector<uint8_t> > RasterizerStorageGLES2::mesh_surface_get_blend_shap
 	ERR_FAIL_COND_V(!mesh, Vector<PoolVector<uint8_t> >());
 	ERR_FAIL_INDEX_V(p_surface, mesh->surfaces.size(), Vector<PoolVector<uint8_t> >());
 #ifndef TOOLS_ENABLED
-	ERR_PRINT("OpenGL ES 2.0 does not allow retrieving mesh array data");
+	ERR_PRINT("OpenGL ES 2.0 does not allow retrieving blend shape data");
 #endif
 
 	return mesh->surfaces[p_surface]->blend_shape_data;
@@ -3743,14 +3821,17 @@ void RasterizerStorageGLES2::_update_skeleton_transform_buffer(const PoolVector<
 
 	glBindBuffer(GL_ARRAY_BUFFER, resources.skeleton_transform_buffer);
 
+	uint32_t buffer_size = p_size * sizeof(float);
+
 	if (p_size > resources.skeleton_transform_buffer_size) {
 		// new requested buffer is bigger, so resizing the GPU buffer
 
 		resources.skeleton_transform_buffer_size = p_size;
 
-		glBufferData(GL_ARRAY_BUFFER, p_size * sizeof(float), p_data.read().ptr(), GL_DYNAMIC_DRAW);
+		glBufferData(GL_ARRAY_BUFFER, buffer_size, p_data.read().ptr(), GL_DYNAMIC_DRAW);
 	} else {
-		glBufferSubData(GL_ARRAY_BUFFER, 0, p_size * sizeof(float), p_data.read().ptr());
+		// this may not be best, it could be better to use glBufferData in both cases.
+		buffer_orphan_and_upload(resources.skeleton_transform_buffer_size, 0, buffer_size, p_data.read().ptr(), GL_ARRAY_BUFFER, true);
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -3811,7 +3892,7 @@ RID RasterizerStorageGLES2::light_create(VS::LightType p_type) {
 	light->directional_blend_splits = false;
 	light->directional_range_mode = VS::LIGHT_DIRECTIONAL_SHADOW_DEPTH_RANGE_STABLE;
 	light->reverse_cull = false;
-	light->use_gi = true;
+	light->bake_mode = VS::LIGHT_BAKE_INDIRECT;
 	light->version = 0;
 
 	return light_owner.make_rid(light);
@@ -3900,10 +3981,15 @@ void RasterizerStorageGLES2::light_set_reverse_cull_face_mode(RID p_light, bool 
 }
 
 void RasterizerStorageGLES2::light_set_use_gi(RID p_light, bool p_enabled) {
+	WARN_DEPRECATED_MSG("'VisualServer.light_set_use_gi' is deprecated and will be removed in a future version. Use 'VisualServer.light_set_bake_mode' instead.");
+	light_set_bake_mode(p_light, p_enabled ? VS::LightBakeMode::LIGHT_BAKE_INDIRECT : VS::LightBakeMode::LIGHT_BAKE_DISABLED);
+}
+
+void RasterizerStorageGLES2::light_set_bake_mode(RID p_light, VS::LightBakeMode p_bake_mode) {
 	Light *light = light_owner.getornull(p_light);
 	ERR_FAIL_COND(!light);
 
-	light->use_gi = p_enabled;
+	light->bake_mode = p_bake_mode;
 
 	light->version++;
 	light->instance_change_notify(true, false);
@@ -4005,10 +4091,14 @@ Color RasterizerStorageGLES2::light_get_color(RID p_light) {
 }
 
 bool RasterizerStorageGLES2::light_get_use_gi(RID p_light) {
-	Light *light = light_owner.getornull(p_light);
-	ERR_FAIL_COND_V(!light, false);
+	return light_get_bake_mode(p_light) != VS::LightBakeMode::LIGHT_BAKE_DISABLED;
+}
 
-	return light->use_gi;
+VS::LightBakeMode RasterizerStorageGLES2::light_get_bake_mode(RID p_light) {
+	Light *light = light_owner.getornull(p_light);
+	ERR_FAIL_COND_V(!light, VS::LightBakeMode::LIGHT_BAKE_DISABLED);
+
+	return light->bake_mode;
 }
 
 bool RasterizerStorageGLES2::light_has_shadow(RID p_light) const {
@@ -5357,6 +5447,24 @@ void RasterizerStorageGLES2::render_target_set_msaa(RID p_render_target, VS::Vie
 	_render_target_allocate(rt);
 }
 
+void RasterizerStorageGLES2::render_target_set_use_fxaa(RID p_render_target, bool p_fxaa) {
+	RenderTarget *rt = render_target_owner.getornull(p_render_target);
+	ERR_FAIL_COND(!rt);
+
+	rt->use_fxaa = p_fxaa;
+}
+
+void RasterizerStorageGLES2::render_target_set_use_debanding(RID p_render_target, bool p_debanding) {
+	RenderTarget *rt = render_target_owner.getornull(p_render_target);
+	ERR_FAIL_COND(!rt);
+
+	if (p_debanding) {
+		WARN_PRINT_ONCE("Debanding is not supported in the GLES2 backend. Switch to the GLES3 backend and make sure HDR is enabled.");
+	}
+
+	rt->use_debanding = p_debanding;
+}
+
 /* CANVAS SHADOW */
 
 RID RasterizerStorageGLES2::canvas_light_shadow_buffer_create(int p_width) {
@@ -5764,6 +5872,9 @@ bool RasterizerStorageGLES2::has_os_feature(const String &p_feature) const {
 	if (p_feature == "etc")
 		return config.etc1_supported;
 
+	if (p_feature == "skinning_fallback")
+		return config.use_skeleton_software;
+
 	return false;
 }
 
@@ -5893,7 +6004,7 @@ void RasterizerStorageGLES2::initialize() {
 	config.float_texture_supported = config.extensions.has("GL_ARB_texture_float") || config.extensions.has("GL_OES_texture_float");
 	config.s3tc_supported = config.extensions.has("GL_EXT_texture_compression_s3tc") || config.extensions.has("WEBGL_compressed_texture_s3tc");
 	config.etc1_supported = config.extensions.has("GL_OES_compressed_ETC1_RGB8_texture") || config.extensions.has("WEBGL_compressed_texture_etc1");
-	config.pvrtc_supported = config.extensions.has("IMG_texture_compression_pvrtc") || config.extensions.has("WEBGL_compressed_texture_pvrtc");
+	config.pvrtc_supported = config.extensions.has("GL_IMG_texture_compression_pvrtc") || config.extensions.has("WEBGL_compressed_texture_pvrtc");
 	config.support_npot_repeat_mipmap = config.extensions.has("GL_OES_texture_npot");
 
 #ifdef JAVASCRIPT_ENABLED
@@ -5980,6 +6091,13 @@ void RasterizerStorageGLES2::initialize() {
 
 	config.rgtc_supported = config.extensions.has("GL_EXT_texture_compression_rgtc") || config.extensions.has("GL_ARB_texture_compression_rgtc") || config.extensions.has("EXT_texture_compression_rgtc");
 	config.bptc_supported = config.extensions.has("GL_ARB_texture_compression_bptc") || config.extensions.has("EXT_texture_compression_bptc");
+
+	config.anisotropic_level = 1.0;
+	config.use_anisotropic_filter = config.extensions.has("GL_EXT_texture_filter_anisotropic");
+	if (config.use_anisotropic_filter) {
+		glGetFloatv(_GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &config.anisotropic_level);
+		config.anisotropic_level = MIN(int(ProjectSettings::get_singleton()->get("rendering/quality/filters/anisotropic_filter_level")), config.anisotropic_level);
+	}
 
 	//determine formats for depth textures (or renderbuffers)
 	if (config.support_depth_texture) {
@@ -6211,6 +6329,9 @@ void RasterizerStorageGLES2::initialize() {
 
 	config.force_vertex_shading = GLOBAL_GET("rendering/quality/shading/force_vertex_shading");
 	config.use_fast_texture_filter = GLOBAL_GET("rendering/quality/filters/use_nearest_mipmap_filter");
+	GLOBAL_DEF_RST("rendering/quality/lightmapping/use_bicubic_sampling", true);
+	GLOBAL_DEF_RST("rendering/quality/lightmapping/use_bicubic_sampling.mobile", false);
+	config.use_lightmap_filter_bicubic = GLOBAL_GET("rendering/quality/lightmapping/use_bicubic_sampling");
 }
 
 void RasterizerStorageGLES2::finalize() {
@@ -6230,4 +6351,5 @@ void RasterizerStorageGLES2::update_dirty_resources() {
 
 RasterizerStorageGLES2::RasterizerStorageGLES2() {
 	RasterizerStorageGLES2::system_fbo = 0;
+	config.should_orphan = true;
 }

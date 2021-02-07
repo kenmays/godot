@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -337,10 +337,9 @@ void RigidBodyBullet::set_space(SpaceBullet *p_space) {
 	// Clear the old space if there is one
 	if (space) {
 		can_integrate_forces = false;
-
-		// Remove all eventual constraints
-		assert_no_constraints();
-
+		isScratchedSpaceOverrideModificator = false;
+		// Remove any constraints
+		space->remove_rigid_body_constraints(this);
 		// Remove this object form the physics world
 		space->remove_rigid_body(this);
 	}
@@ -460,17 +459,6 @@ bool RigidBodyBullet::was_colliding(RigidBodyBullet *p_other_object) {
 	return false;
 }
 
-void RigidBodyBullet::assert_no_constraints() {
-	if (btBody->getNumConstraintRefs()) {
-		WARN_PRINT("A body with a joints is destroyed. Please check the implementation in order to destroy the joint before the body.");
-	}
-	/*for(int i = btBody->getNumConstraintRefs()-1; 0<=i; --i){
-        btTypedConstraint* btConst = btBody->getConstraintRef(i);
-        JointBullet* joint = static_cast<JointBullet*>( btConst->getUserConstraintPtr() );
-        space->removeConstraint(joint);
-    }*/
-}
-
 void RigidBodyBullet::set_activation_state(bool p_active) {
 	if (p_active) {
 		btBody->activate();
@@ -503,15 +491,18 @@ void RigidBodyBullet::set_param(PhysicsServer::BodyParameter p_param, real_t p_v
 		}
 		case PhysicsServer::BODY_PARAM_LINEAR_DAMP:
 			linearDamp = p_value;
-			btBody->setDamping(linearDamp, angularDamp);
+			// Mark for updating total linear damping.
+			scratch_space_override_modificator();
 			break;
 		case PhysicsServer::BODY_PARAM_ANGULAR_DAMP:
 			angularDamp = p_value;
-			btBody->setDamping(linearDamp, angularDamp);
+			// Mark for updating total angular damping.
+			scratch_space_override_modificator();
 			break;
 		case PhysicsServer::BODY_PARAM_GRAVITY_SCALE:
 			gravity_scale = p_value;
-			/// The Bullet gravity will be is set by reload_space_override_modificator
+			// The Bullet gravity will be is set by reload_space_override_modificator.
+			// Mark for updating total gravity scale.
 			scratch_space_override_modificator();
 			break;
 		default:
@@ -854,8 +845,8 @@ void RigidBodyBullet::on_enter_area(AreaBullet *p_area) {
 		} else {
 			if (areasWhereIam[i]->get_spOv_priority() > p_area->get_spOv_priority()) {
 				// The position was found, just shift all elements
-				for (int j = i; j < areaWhereIamCount; ++j) {
-					areasWhereIam.write[j + 1] = areasWhereIam[j];
+				for (int j = areaWhereIamCount; j > i; j--) {
+					areasWhereIam.write[j] = areasWhereIam[j - 1];
 				}
 				areasWhereIam.write[i] = p_area;
 				break;
@@ -902,21 +893,19 @@ void RigidBodyBullet::on_exit_area(AreaBullet *p_area) {
 }
 
 void RigidBodyBullet::reload_space_override_modificator() {
-
-	// Make sure that kinematic bodies have their total gravity calculated
-	if (!is_active() && PhysicsServer::BODY_MODE_KINEMATIC != mode)
+	if (mode == PhysicsServer::BODY_MODE_STATIC)
 		return;
 
-	Vector3 newGravity(space->get_gravity_direction() * space->get_gravity_magnitude());
-	real_t newLinearDamp(linearDamp);
-	real_t newAngularDamp(angularDamp);
+	Vector3 newGravity(0.0, 0.0, 0.0);
+	real_t newLinearDamp = MAX(0.0, linearDamp);
+	real_t newAngularDamp = MAX(0.0, angularDamp);
 
 	AreaBullet *currentArea;
 	// Variable used to calculate new gravity for gravity point areas, it is pointed by currentGravity pointer
 	Vector3 support_gravity(0, 0, 0);
 
-	int countCombined(0);
-	for (int i = areaWhereIamCount - 1; 0 <= i; --i) {
+	bool stopped = false;
+	for (int i = areaWhereIamCount - 1; (0 <= i) && !stopped; --i) {
 
 		currentArea = areasWhereIam[i];
 
@@ -965,7 +954,6 @@ void RigidBodyBullet::reload_space_override_modificator() {
 				newGravity += support_gravity;
 				newLinearDamp += currentArea->get_spOv_linearDamp();
 				newAngularDamp += currentArea->get_spOv_angularDamp();
-				++countCombined;
 				break;
 			case PhysicsServer::AREA_SPACE_OVERRIDE_COMBINE_REPLACE:
 				/// This area adds its gravity/damp values to whatever has been calculated
@@ -974,32 +962,31 @@ void RigidBodyBullet::reload_space_override_modificator() {
 				newGravity += support_gravity;
 				newLinearDamp += currentArea->get_spOv_linearDamp();
 				newAngularDamp += currentArea->get_spOv_angularDamp();
-				++countCombined;
-				goto endAreasCycle;
+				stopped = true;
+				break;
 			case PhysicsServer::AREA_SPACE_OVERRIDE_REPLACE:
 				/// This area replaces any gravity/damp, even the default one, and
 				/// stops taking into account the rest of the areas.
 				newGravity = support_gravity;
 				newLinearDamp = currentArea->get_spOv_linearDamp();
 				newAngularDamp = currentArea->get_spOv_angularDamp();
-				countCombined = 1;
-				goto endAreasCycle;
+				stopped = true;
+				break;
 			case PhysicsServer::AREA_SPACE_OVERRIDE_REPLACE_COMBINE:
 				/// This area replaces any gravity/damp calculated so far, but keeps
 				/// calculating the rest of the areas, down to the default one.
 				newGravity = support_gravity;
 				newLinearDamp = currentArea->get_spOv_linearDamp();
 				newAngularDamp = currentArea->get_spOv_angularDamp();
-				countCombined = 1;
 				break;
 		}
 	}
-endAreasCycle:
 
-	if (1 < countCombined) {
-		newGravity /= countCombined;
-		newLinearDamp /= countCombined;
-		newAngularDamp /= countCombined;
+	// Add default gravity and damping from space.
+	if (!stopped) {
+		newGravity += space->get_gravity_direction() * space->get_gravity_magnitude();
+		newLinearDamp += space->get_linear_damp();
+		newAngularDamp += space->get_angular_damp();
 	}
 
 	btVector3 newBtGravity;

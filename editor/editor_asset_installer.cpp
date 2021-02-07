@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -55,6 +55,27 @@ void EditorAssetInstaller::_update_subitems(TreeItem *p_item, bool p_check, bool
 	}
 }
 
+void EditorAssetInstaller::_uncheck_parent(TreeItem *p_item) {
+	if (!p_item) {
+		return;
+	}
+
+	bool any_checked = false;
+	TreeItem *item = p_item->get_children();
+	while (item) {
+		if (item->is_checked(0)) {
+			any_checked = true;
+			break;
+		}
+		item = item->get_next();
+	}
+
+	if (!any_checked) {
+		p_item->set_checked(0, false);
+		_uncheck_parent(p_item->get_parent());
+	}
+}
+
 void EditorAssetInstaller::_item_edited() {
 
 	if (updating)
@@ -67,7 +88,7 @@ void EditorAssetInstaller::_item_edited() {
 	String path = item->get_metadata(0);
 
 	updating = true;
-	if (path == String()) { //a dir
+	if (path == String() || item == tree->get_root()) { //a dir or root
 		_update_subitems(item, item->is_checked(0), true);
 	}
 
@@ -76,6 +97,8 @@ void EditorAssetInstaller::_item_edited() {
 			item->set_checked(0, true);
 			item = item->get_parent();
 		}
+	} else {
+		_uncheck_parent(item->get_parent());
 	}
 	updating = false;
 }

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -188,7 +188,7 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 	if (p_mode != PROCESS_CACHE && align != ALIGN_FILL)
 		wofs += line_ofs;
 
-	int begin = wofs;
+	int begin = margin;
 
 	Ref<Font> cfont = _find_font(it);
 	if (cfont.is_null())
@@ -247,7 +247,7 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 			lh = line < l.height_caches.size() ? l.height_caches[line] : 1;                                                                                     \
 			line_ascent = line < l.ascent_caches.size() ? l.ascent_caches[line] : 1;                                                                            \
 			line_descent = line < l.descent_caches.size() ? l.descent_caches[line] : 1;                                                                         \
-			if (p_mode == PROCESS_DRAW) {                                                                                                                       \
+			if (align != ALIGN_FILL) {                                                                                                                          \
 				if (line < l.offset_caches.size()) {                                                                                                            \
 					wofs = l.offset_caches[line];                                                                                                               \
 				}                                                                                                                                               \
@@ -1556,6 +1556,10 @@ void RichTextLabel::_validate_line_caches(ItemFrame *p_frame) {
 		vscroll->set_value(total_height - size.height);
 
 	updating_scroll = false;
+
+	if (fit_content_height) {
+		minimum_size_changed();
+	}
 }
 
 void RichTextLabel::_invalidate_current_line(ItemFrame *p_frame) {
@@ -1968,6 +1972,9 @@ void RichTextLabel::clear() {
 	selection.click = NULL;
 	selection.active = false;
 	current_idx = 1;
+	if (scroll_follow) {
+		scroll_following = true;
+	}
 }
 
 void RichTextLabel::set_tab_size(int p_spaces) {
@@ -1980,6 +1987,17 @@ void RichTextLabel::set_tab_size(int p_spaces) {
 int RichTextLabel::get_tab_size() const {
 
 	return tab_size;
+}
+
+void RichTextLabel::set_fit_content_height(bool p_enabled) {
+	if (p_enabled != fit_content_height) {
+		fit_content_height = p_enabled;
+		minimum_size_changed();
+	}
+}
+
+bool RichTextLabel::is_fit_content_height_enabled() const {
+	return fit_content_height;
 }
 
 void RichTextLabel::set_meta_underline(bool p_underline) {
@@ -2455,6 +2473,17 @@ Error RichTextLabel::append_bbcode(const String &p_bbcode) {
 		}
 	}
 
+	Vector<ItemFX *> fx_items;
+	for (List<Item *>::Element *E = main->subitems.front(); E; E = E->next()) {
+		Item *subitem = static_cast<Item *>(E->get());
+		_fetch_item_fx_stack(subitem, fx_items);
+
+		if (fx_items.size()) {
+			set_process_internal(true);
+			break;
+		}
+	}
+
 	return OK;
 }
 
@@ -2549,10 +2578,10 @@ bool RichTextLabel::search(const String &p_string, bool p_from_selection, bool p
 	return false;
 }
 
-void RichTextLabel::selection_copy() {
-
-	if (!selection.active || !selection.enabled)
-		return;
+String RichTextLabel::get_selected_text() {
+	if (!selection.active || !selection.enabled) {
+		return "";
+	}
 
 	String text;
 
@@ -2581,6 +2610,12 @@ void RichTextLabel::selection_copy() {
 
 		item = _get_next_item(item, true);
 	}
+
+	return text;
+}
+
+void RichTextLabel::selection_copy() {
+	String text = get_selected_text();
 
 	if (text != "") {
 		OS::get_singleton()->set_clipboard(text);
@@ -2653,6 +2688,7 @@ void RichTextLabel::set_percent_visible(float p_percent) {
 		visible_characters = get_total_character_count() * p_percent;
 		percent_visible = p_percent;
 	}
+	_change_notify("visible_characters");
 	update();
 }
 
@@ -2688,7 +2724,7 @@ void RichTextLabel::install_effect(const Variant effect) {
 	}
 }
 
-int RichTextLabel::get_content_height() {
+int RichTextLabel::get_content_height() const {
 	int total_height = 0;
 	if (main->lines.size())
 		total_height = main->lines[main->lines.size() - 1].height_accum_cache + get_stylebox("normal")->get_minimum_size().height;
@@ -2744,6 +2780,9 @@ void RichTextLabel::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_tab_size", "spaces"), &RichTextLabel::set_tab_size);
 	ClassDB::bind_method(D_METHOD("get_tab_size"), &RichTextLabel::get_tab_size);
 
+	ClassDB::bind_method(D_METHOD("set_fit_content_height", "enabled"), &RichTextLabel::set_fit_content_height);
+	ClassDB::bind_method(D_METHOD("is_fit_content_height_enabled"), &RichTextLabel::is_fit_content_height_enabled);
+
 	ClassDB::bind_method(D_METHOD("set_selection_enabled", "enabled"), &RichTextLabel::set_selection_enabled);
 	ClassDB::bind_method(D_METHOD("is_selection_enabled"), &RichTextLabel::is_selection_enabled);
 
@@ -2785,6 +2824,8 @@ void RichTextLabel::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "meta_underlined"), "set_meta_underline", "is_meta_underlined");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "tab_size", PROPERTY_HINT_RANGE, "0,24,1"), "set_tab_size", "get_tab_size");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "text", PROPERTY_HINT_MULTILINE_TEXT), "set_text", "get_text");
+
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "fit_content_height"), "set_fit_content_height", "is_fit_content_height_enabled");
 
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "scroll_active"), "set_scroll_active", "is_scroll_active");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "scroll_following"), "set_scroll_follow", "is_scroll_following");
@@ -2830,6 +2871,15 @@ void RichTextLabel::_bind_methods() {
 
 void RichTextLabel::set_visible_characters(int p_visible) {
 	visible_characters = p_visible;
+	if (p_visible == -1) {
+		percent_visible = 1;
+	} else {
+		int total_char_count = get_total_character_count();
+		if (total_char_count > 0) {
+			percent_visible = (float)p_visible / (float)total_char_count;
+		}
+	}
+	_change_notify("percent_visible");
 	update();
 }
 
@@ -2852,12 +2902,17 @@ void RichTextLabel::set_fixed_size_to_width(int p_width) {
 
 Size2 RichTextLabel::get_minimum_size() const {
 
+	Size2 size(0, 0);
 	if (fixed_width != -1) {
-		const_cast<RichTextLabel *>(this)->_validate_line_caches(main);
-		return Size2(fixed_width, const_cast<RichTextLabel *>(this)->get_content_height());
+		size.x = fixed_width;
 	}
 
-	return Size2();
+	if (fixed_width != -1 || fit_content_height) {
+		const_cast<RichTextLabel *>(this)->_validate_line_caches(main);
+		size.y = get_content_height();
+	}
+
+	return size;
 }
 
 Ref<RichTextEffect> RichTextLabel::_get_custom_effect_by_code(String p_bbcode_identifier) {
@@ -2975,6 +3030,8 @@ RichTextLabel::RichTextLabel() {
 	visible_line_count = 0;
 
 	fixed_width = -1;
+	fit_content_height = false;
+
 	set_clip_contents(true);
 }
 

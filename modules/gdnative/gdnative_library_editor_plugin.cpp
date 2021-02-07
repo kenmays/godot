@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -141,14 +141,25 @@ void GDNativeLibraryEditor::_on_item_button(Object *item, int column, int id) {
 
 	if (id == BUTTON_SELECT_LIBRARY || id == BUTTON_SELECT_DEPENDENCES) {
 
+		TreeItem *treeItem = Object::cast_to<TreeItem>(item)->get_parent();
 		EditorFileDialog::Mode mode = EditorFileDialog::MODE_OPEN_FILE;
-		if (id == BUTTON_SELECT_DEPENDENCES)
+
+		if (id == BUTTON_SELECT_DEPENDENCES) {
 			mode = EditorFileDialog::MODE_OPEN_FILES;
+		} else if (treeItem->get_text(0) == "iOS") {
+			mode = EditorFileDialog::MODE_OPEN_ANY;
+		}
 
 		file_dialog->set_meta("target", target);
 		file_dialog->set_meta("section", section);
 		file_dialog->clear_filters();
-		file_dialog->add_filter(Object::cast_to<TreeItem>(item)->get_parent()->get_metadata(0));
+
+		String filter_string = treeItem->get_metadata(0);
+		Vector<String> filters = filter_string.split(",", false, 0);
+		for (int i = 0; i < filters.size(); i++) {
+			file_dialog->add_filter(filters[i]);
+		}
+
 		file_dialog->set_mode(mode);
 		file_dialog->popup_centered_ratio();
 
@@ -306,7 +317,7 @@ GDNativeLibraryEditor::GDNativeLibraryEditor() {
 		platforms["Haiku"] = platform_haiku;
 
 		NativePlatformConfig platform_uwp;
-		platform_uwp.name = "Windows Universal";
+		platform_uwp.name = "UWP";
 		platform_uwp.entries.push_back("arm");
 		platform_uwp.entries.push_back("32");
 		platform_uwp.entries.push_back("64");
@@ -322,17 +333,20 @@ GDNativeLibraryEditor::GDNativeLibraryEditor() {
 		platform_android.library_extension = "*.so";
 		platforms["Android"] = platform_android;
 
-		//		TODO: Javascript platform is not supported yet
-		//		NativePlatformConfig platform_html5;
-		//		platform_html5.name = "HTML5";
-		//		platform_html5.library_extension = "*.wasm";
-		//		platforms["Javascript"] = platform_html5;
+		NativePlatformConfig platform_html5;
+		platform_html5.name = "HTML5";
+		platform_html5.entries.push_back("wasm32");
+		platform_html5.library_extension = "*.wasm";
+		platforms["HTML5"] = platform_html5;
 
 		NativePlatformConfig platform_ios;
 		platform_ios.name = "iOS";
 		platform_ios.entries.push_back("armv7");
 		platform_ios.entries.push_back("arm64");
-		platform_ios.library_extension = "*.dylib";
+		platform_ios.entries.push_back("x86_64");
+		// iOS can use both Static and Dynamic libraries.
+		// Frameworks is actually a folder with files.
+		platform_ios.library_extension = "*.framework; Framework, *.xcframework; Binary Framework, *.a; Static Library, *.dylib; Dynamic Library";
 		platforms["iOS"] = platform_ios;
 	}
 
@@ -383,6 +397,7 @@ GDNativeLibraryEditor::GDNativeLibraryEditor() {
 	file_dialog->set_resizable(true);
 	add_child(file_dialog);
 	file_dialog->connect("file_selected", this, "_on_library_selected");
+	file_dialog->connect("dir_selected", this, "_on_library_selected");
 	file_dialog->connect("files_selected", this, "_on_dependencies_selected");
 
 	new_architecture_dialog = memnew(ConfirmationDialog);

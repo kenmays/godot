@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -36,7 +36,11 @@
 
 class Basis {
 public:
-	Vector3 elements[3];
+	Vector3 elements[3] = {
+		Vector3(1, 0, 0),
+		Vector3(0, 1, 0),
+		Vector3(0, 0, 1)
+	};
 
 	_FORCE_INLINE_ const Vector3 &operator[](int axis) const {
 
@@ -90,8 +94,21 @@ public:
 
 	Vector3 get_euler_xyz() const;
 	void set_euler_xyz(const Vector3 &p_euler);
+
+	Vector3 get_euler_xzy() const;
+	void set_euler_xzy(const Vector3 &p_euler);
+
+	Vector3 get_euler_yzx() const;
+	void set_euler_yzx(const Vector3 &p_euler);
+
 	Vector3 get_euler_yxz() const;
 	void set_euler_yxz(const Vector3 &p_euler);
+
+	Vector3 get_euler_zxy() const;
+	void set_euler_zxy(const Vector3 &p_euler);
+
+	Vector3 get_euler_zyx() const;
+	void set_euler_zyx(const Vector3 &p_euler);
 
 	Quat get_quat() const;
 	void set_quat(const Quat &p_quat);
@@ -244,18 +261,7 @@ public:
 		elements[2] = row2;
 	}
 
-	_FORCE_INLINE_ Basis() {
-
-		elements[0][0] = 1;
-		elements[0][1] = 0;
-		elements[0][2] = 0;
-		elements[1][0] = 0;
-		elements[1][1] = 1;
-		elements[1][2] = 0;
-		elements[2][0] = 0;
-		elements[2][1] = 0;
-		elements[2][2] = 1;
-	}
+	_FORCE_INLINE_ Basis() {}
 };
 
 _FORCE_INLINE_ void Basis::operator*=(const Basis &p_matrix) {

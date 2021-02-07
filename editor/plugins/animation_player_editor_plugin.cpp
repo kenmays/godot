@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -126,7 +126,7 @@ void AnimationPlayerEditor::_notification(int p_what) {
 			stop->set_icon(get_icon("Stop", "EditorIcons"));
 
 			onion_toggle->set_icon(get_icon("Onion", "EditorIcons"));
-			onion_skinning->set_icon(get_icon("GuiTabMenu", "EditorIcons"));
+			onion_skinning->set_icon(get_icon("GuiTabMenuHl", "EditorIcons"));
 
 			pin->set_icon(get_icon("Pin", "EditorIcons"));
 
@@ -405,27 +405,25 @@ void AnimationPlayerEditor::_animation_save_as(const Ref<Resource> &p_resource) 
 		file->add_filter("*." + extensions[i] + " ; " + extensions[i].to_upper());
 	}
 
+	String path;
 	//file->set_current_path(current_path);
 	if (p_resource->get_path() != "") {
-		file->set_current_path(p_resource->get_path());
+		path = p_resource->get_path();
 		if (extensions.size()) {
-			String ext = p_resource->get_path().get_extension().to_lower();
-			if (extensions.find(ext) == NULL) {
-				file->set_current_path(p_resource->get_path().replacen("." + ext, "." + extensions.front()->get()));
+			if (extensions.find(p_resource->get_path().get_extension().to_lower()) == NULL) {
+				path = p_resource->get_path().get_base_dir() + p_resource->get_name() + "." + extensions.front()->get();
 			}
 		}
 	} else {
-
-		String existing;
 		if (extensions.size()) {
 			if (p_resource->get_name() != "") {
-				existing = p_resource->get_name() + "." + extensions.front()->get().to_lower();
+				path = p_resource->get_name() + "." + extensions.front()->get().to_lower();
 			} else {
-				existing = "new_" + p_resource->get_class().to_lower() + "." + extensions.front()->get().to_lower();
+				path = "new_" + p_resource->get_class().to_lower() + "." + extensions.front()->get().to_lower();
 			}
 		}
-		file->set_current_path(existing);
 	}
+	file->set_current_path(path);
 	file->popup_centered_ratio();
 	file->set_title(TTR("Save Resource As..."));
 	current_option = RESOURCE_SAVE;

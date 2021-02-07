@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -40,7 +40,6 @@ class Node2D : public CanvasItem {
 	Point2 pos;
 	float angle;
 	Size2 _scale;
-	float skew;
 	int z_index;
 	bool z_relative;
 
@@ -76,8 +75,6 @@ public:
 	void set_position(const Point2 &p_pos);
 	void set_rotation(float p_radians);
 	void set_rotation_degrees(float p_degrees);
-	void set_skew(float p_radians);
-	void set_skew_degrees(float p_radians);
 	void set_scale(const Size2 &p_scale);
 
 	void rotate(float p_radians);
@@ -89,9 +86,7 @@ public:
 
 	Point2 get_position() const;
 	float get_rotation() const;
-	float get_skew() const;
 	float get_rotation_degrees() const;
-	float get_skew_degrees() const;
 	Size2 get_scale() const;
 
 	Point2 get_global_position() const;

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -34,6 +34,7 @@
 #include "os_windows.h"
 
 #include "core/io/marshalls.h"
+#include "core/math/geometry.h"
 #include "core/version_generated.gen.h"
 #include "drivers/gles2/rasterizer_gles2.h"
 #include "drivers/gles3/rasterizer_gles3.h"
@@ -234,7 +235,6 @@ void OS_Windows::initialize_core() {
 	FileAccess::make_default<FileAccessWindows>(FileAccess::ACCESS_RESOURCES);
 	FileAccess::make_default<FileAccessWindows>(FileAccess::ACCESS_USERDATA);
 	FileAccess::make_default<FileAccessWindows>(FileAccess::ACCESS_FILESYSTEM);
-	//FileAccessBufferedFA<FileAccessWindows>::make_default();
 	DirAccess::make_default<DirAccessWindows>(DirAccess::ACCESS_RESOURCES);
 	DirAccess::make_default<DirAccessWindows>(DirAccess::ACCESS_USERDATA);
 	DirAccess::make_default<DirAccessWindows>(DirAccess::ACCESS_FILESYSTEM);
@@ -254,6 +254,13 @@ void OS_Windows::initialize_core() {
 	timeBeginPeriod(1);
 
 	process_map = memnew((Map<ProcessID, ProcessInfo>));
+
+	// Add current Godot PID to the list of known PIDs
+	ProcessInfo current_pi = {};
+	PROCESS_INFORMATION current_pi_pi = {};
+	current_pi.pi = current_pi_pi;
+	current_pi.pi.hProcess = GetCurrentProcess();
+	process_map->insert(GetCurrentProcessId(), current_pi);
 
 	IP_Unix::make_default();
 
@@ -550,8 +557,8 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
 					Ref<InputEventMouseMotion> mm;
 					mm.instance();
-					mm->set_control(GetKeyState(VK_CONTROL) != 0);
-					mm->set_shift(GetKeyState(VK_SHIFT) != 0);
+					mm->set_control(GetKeyState(VK_CONTROL) < 0);
+					mm->set_shift(GetKeyState(VK_SHIFT) < 0);
 					mm->set_alt(alt_mem);
 
 					mm->set_pressure(last_pressure);
@@ -692,8 +699,8 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 				mm->set_tilt(Vector2((float)pen_info.tiltX / 90, (float)pen_info.tiltY / 90));
 			}
 
-			mm->set_control((wParam & MK_CONTROL) != 0);
-			mm->set_shift((wParam & MK_SHIFT) != 0);
+			mm->set_control(GetKeyState(VK_CONTROL) < 0);
+			mm->set_shift(GetKeyState(VK_SHIFT) < 0);
 			mm->set_alt(alt_mem);
 
 			mm->set_button_mask(last_button_state);
@@ -1084,9 +1091,9 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		case WM_KEYDOWN: {
 
 			if (wParam == VK_SHIFT)
-				shift_mem = uMsg == WM_KEYDOWN;
+				shift_mem = (uMsg == WM_KEYDOWN || uMsg == WM_SYSKEYDOWN);
 			if (wParam == VK_CONTROL)
-				control_mem = uMsg == WM_KEYDOWN;
+				control_mem = (uMsg == WM_KEYDOWN || uMsg == WM_SYSKEYDOWN);
 			if (wParam == VK_MENU) {
 				alt_mem = (uMsg == WM_KEYDOWN || uMsg == WM_SYSKEYDOWN);
 				if (lParam & (1 << 24))
@@ -1179,10 +1186,11 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 			if (LOWORD(lParam) == HTCLIENT) {
 				if (window_has_focus && (mouse_mode == MOUSE_MODE_HIDDEN || mouse_mode == MOUSE_MODE_CAPTURED)) {
 					//Hide the cursor
-					if (hCursor == NULL)
+					if (hCursor == NULL) {
 						hCursor = SetCursor(NULL);
-					else
+					} else {
 						SetCursor(NULL);
+					}
 				} else {
 					if (hCursor != NULL) {
 						CursorShape c = cursor_shape;
@@ -1679,8 +1687,6 @@ Error OS_Windows::initialize(const VideoMode &p_desired, int p_video_driver, int
 
 	RegisterTouchWindow(hWnd, 0);
 
-	_ensure_user_data_dir();
-
 	DragAcceptFiles(hWnd, true);
 
 	move_timer_id = 1;
@@ -1725,7 +1731,7 @@ void OS_Windows::set_clipboard(const String &p_text) {
 
 	// Convert LF line endings to CRLF in clipboard content
 	// Otherwise, line endings won't be visible when pasted in other software
-	String text = p_text.replace("\n", "\r\n");
+	String text = p_text.replace("\r\n", "\n").replace("\n", "\r\n"); // avoid \r\r\n
 
 	if (!OpenClipboard(hWnd)) {
 		ERR_FAIL_MSG("Unable to open clipboard.");
@@ -1846,10 +1852,12 @@ void OS_Windows::finalize_core() {
 
 void OS_Windows::alert(const String &p_alert, const String &p_title) {
 
-	if (!is_no_window_mode_enabled())
-		MessageBoxW(NULL, p_alert.c_str(), p_title.c_str(), MB_OK | MB_ICONEXCLAMATION | MB_TASKMODAL);
-	else
-		print_line("ALERT: " + p_alert);
+	if (is_no_window_mode_enabled()) {
+		print_line("ALERT: " + p_title + ": " + p_alert);
+		return;
+	}
+
+	MessageBoxW(NULL, p_alert.c_str(), p_title.c_str(), MB_OK | MB_ICONEXCLAMATION | MB_TASKMODAL);
 }
 
 void OS_Windows::set_mouse_mode(MouseMode p_mode) {
@@ -1857,9 +1865,9 @@ void OS_Windows::set_mouse_mode(MouseMode p_mode) {
 	if (mouse_mode == p_mode)
 		return;
 
-	_set_mouse_mode_impl(p_mode);
-
 	mouse_mode = p_mode;
+
+	_set_mouse_mode_impl(p_mode);
 }
 
 void OS_Windows::_set_mouse_mode_impl(MouseMode p_mode) {
@@ -1883,7 +1891,11 @@ void OS_Windows::_set_mouse_mode_impl(MouseMode p_mode) {
 	}
 
 	if (p_mode == MOUSE_MODE_CAPTURED || p_mode == MOUSE_MODE_HIDDEN) {
-		hCursor = SetCursor(NULL);
+		if (hCursor == NULL) {
+			hCursor = SetCursor(NULL);
+		} else {
+			SetCursor(NULL);
+		}
 	} else {
 		CursorShape c = cursor_shape;
 		cursor_shape = CURSOR_MAX;
@@ -1938,6 +1950,36 @@ int OS_Windows::get_mouse_button_state() const {
 void OS_Windows::set_window_title(const String &p_title) {
 
 	SetWindowTextW(hWnd, p_title.c_str());
+}
+
+void OS_Windows::set_window_mouse_passthrough(const PoolVector2Array &p_region) {
+	mpath.clear();
+	for (int i = 0; i < p_region.size(); i++) {
+		mpath.push_back(p_region[i]);
+	}
+	_update_window_mouse_passthrough();
+}
+
+void OS_Windows::_update_window_mouse_passthrough() {
+	if (mpath.size() == 0) {
+		SetWindowRgn(hWnd, NULL, TRUE);
+	} else {
+		POINT *points = (POINT *)memalloc(sizeof(POINT) * mpath.size());
+		for (int i = 0; i < mpath.size(); i++) {
+			if (video_mode.borderless_window) {
+				points[i].x = mpath[i].x;
+				points[i].y = mpath[i].y;
+			} else {
+				points[i].x = mpath[i].x + GetSystemMetrics(SM_CXSIZEFRAME);
+				points[i].y = mpath[i].y + GetSystemMetrics(SM_CYSIZEFRAME) + GetSystemMetrics(SM_CYCAPTION);
+			}
+		}
+
+		HRGN region = CreatePolygonRgn(points, mpath.size(), ALTERNATE);
+		SetWindowRgn(hWnd, region, TRUE);
+		DeleteObject(region);
+		memfree(points);
+	}
 }
 
 void OS_Windows::set_video_mode(const VideoMode &p_video_mode, int p_screen) {
@@ -2224,6 +2266,10 @@ bool OS_Windows::is_window_resizable() const {
 }
 void OS_Windows::set_window_minimized(bool p_enabled) {
 
+	if (is_no_window_mode_enabled()) {
+		return;
+	}
+
 	if (p_enabled) {
 		maximized = false;
 		minimized = true;
@@ -2239,6 +2285,10 @@ bool OS_Windows::is_window_minimized() const {
 	return minimized;
 }
 void OS_Windows::set_window_maximized(bool p_enabled) {
+
+	if (is_no_window_mode_enabled()) {
+		return;
+	}
 
 	if (p_enabled) {
 		maximized = true;
@@ -2327,6 +2377,7 @@ void OS_Windows::set_borderless_window(bool p_borderless) {
 
 	preserve_window_size = true;
 	_update_window_style();
+	_update_window_mouse_passthrough();
 }
 
 bool OS_Windows::get_borderless_window() {
@@ -2359,7 +2410,7 @@ void OS_Windows::_update_window_style(bool p_repaint, bool p_maximized) {
 
 Error OS_Windows::open_dynamic_library(const String p_path, void *&p_library_handle, bool p_also_set_library_path) {
 
-	String path = p_path;
+	String path = p_path.replace("/", "\\");
 
 	if (!FileAccess::exists(path)) {
 		//this code exists so gdnative can load .dll files from within the executable path
@@ -2417,6 +2468,17 @@ void OS_Windows::request_attention() {
 	info.dwTimeout = 0;
 	info.uCount = 2;
 	FlashWindowEx(&info);
+}
+
+void *OS_Windows::get_native_handle(int p_handle_type) {
+	switch (p_handle_type) {
+		case APPLICATION_HANDLE: return hInstance;
+		case DISPLAY_HANDLE: return NULL; // Do we have a value to return here?
+		case WINDOW_HANDLE: return hWnd;
+		case WINDOW_VIEW: return gl_context->get_hdc();
+		case OPENGL_CONTEXT: return gl_context->get_hglrc();
+		default: return NULL;
+	}
 }
 
 String OS_Windows::get_name() const {
@@ -2538,12 +2600,29 @@ void OS_Windows::delay_usec(uint32_t p_usec) const {
 uint64_t OS_Windows::get_ticks_usec() const {
 
 	uint64_t ticks;
-	uint64_t time;
+
 	// This is the number of clock ticks since start
 	if (!QueryPerformanceCounter((LARGE_INTEGER *)&ticks))
 		ticks = (UINT64)timeGetTime();
+
 	// Divide by frequency to get the time in seconds
-	time = ticks * 1000000L / ticks_per_second;
+	// original calculation shown below is subject to overflow
+	// with high ticks_per_second and a number of days since the last reboot.
+	// time = ticks * 1000000L / ticks_per_second;
+
+	// we can prevent this by either using 128 bit math
+	// or separating into a calculation for seconds, and the fraction
+	uint64_t seconds = ticks / ticks_per_second;
+
+	// compiler will optimize these two into one divide
+	uint64_t leftover = ticks % ticks_per_second;
+
+	// remainder
+	uint64_t time = (leftover * 1000000L) / ticks_per_second;
+
+	// seconds
+	time += seconds * 1000000L;
+
 	// Subtract the time at game start to get
 	// the time since the game started
 	time -= ticks_start;
@@ -2810,9 +2889,10 @@ String OS_Windows::_quote_command_line_argument(const String &p_text) const {
 }
 
 Error OS_Windows::execute(const String &p_path, const List<String> &p_arguments, bool p_blocking, ProcessID *r_child_id, String *r_pipe, int *r_exitcode, bool read_stderr, Mutex *p_pipe_mutex) {
+	String path = p_path.replace("/", "\\");
 
 	if (p_blocking && r_pipe) {
-		String argss = _quote_command_line_argument(p_path);
+		String argss = _quote_command_line_argument(path);
 		for (const List<String>::Element *E = p_arguments.front(); E; E = E->next()) {
 			argss += " " + _quote_command_line_argument(E->get());
 		}
@@ -2846,7 +2926,7 @@ Error OS_Windows::execute(const String &p_path, const List<String> &p_arguments,
 		return OK;
 	}
 
-	String cmdline = _quote_command_line_argument(p_path);
+	String cmdline = _quote_command_line_argument(path);
 	const List<String>::Element *I = p_arguments.front();
 	while (I) {
 		cmdline += " " + _quote_command_line_argument(I->get());
@@ -2869,9 +2949,10 @@ Error OS_Windows::execute(const String &p_path, const List<String> &p_arguments,
 	ERR_FAIL_COND_V(ret == 0, ERR_CANT_FORK);
 
 	if (p_blocking) {
-
-		DWORD ret2 = WaitForSingleObject(pi.pi.hProcess, INFINITE);
+		WaitForSingleObject(pi.pi.hProcess, INFINITE);
 		if (r_exitcode) {
+			DWORD ret2;
+			GetExitCodeProcess(pi.pi.hProcess, &ret2);
 			*r_exitcode = ret2;
 		}
 
@@ -2920,7 +3001,7 @@ String OS_Windows::get_executable_path() const {
 	wchar_t bufname[4096];
 	GetModuleFileNameW(NULL, bufname, 4096);
 	String s = bufname;
-	return s;
+	return s.replace("\\", "/");
 }
 
 void OS_Windows::set_native_icon(const String &p_filename) {
@@ -3239,6 +3320,101 @@ OS::LatinKeyboardVariant OS_Windows::get_latin_keyboard_variant() const {
 	}
 
 	return LATIN_KEYBOARD_QWERTY;
+}
+
+int OS_Windows::keyboard_get_layout_count() const {
+	return GetKeyboardLayoutList(0, NULL);
+}
+
+int OS_Windows::keyboard_get_current_layout() const {
+	HKL cur_layout = GetKeyboardLayout(0);
+
+	int layout_count = GetKeyboardLayoutList(0, NULL);
+	HKL *layouts = (HKL *)memalloc(layout_count * sizeof(HKL));
+	GetKeyboardLayoutList(layout_count, layouts);
+
+	for (int i = 0; i < layout_count; i++) {
+		if (cur_layout == layouts[i]) {
+			memfree(layouts);
+			return i;
+		}
+	}
+	memfree(layouts);
+	return -1;
+}
+
+void OS_Windows::keyboard_set_current_layout(int p_index) {
+	int layout_count = GetKeyboardLayoutList(0, NULL);
+
+	ERR_FAIL_INDEX(p_index, layout_count);
+
+	HKL *layouts = (HKL *)memalloc(layout_count * sizeof(HKL));
+	GetKeyboardLayoutList(layout_count, layouts);
+	ActivateKeyboardLayout(layouts[p_index], KLF_SETFORPROCESS);
+	memfree(layouts);
+}
+
+String OS_Windows::keyboard_get_layout_language(int p_index) const {
+	int layout_count = GetKeyboardLayoutList(0, NULL);
+
+	ERR_FAIL_INDEX_V(p_index, layout_count, "");
+
+	HKL *layouts = (HKL *)memalloc(layout_count * sizeof(HKL));
+	GetKeyboardLayoutList(layout_count, layouts);
+
+	wchar_t buf[LOCALE_NAME_MAX_LENGTH];
+	memset(buf, 0, LOCALE_NAME_MAX_LENGTH * sizeof(wchar_t));
+	LCIDToLocaleName(MAKELCID(LOWORD(layouts[p_index]), SORT_DEFAULT), buf, LOCALE_NAME_MAX_LENGTH, 0);
+
+	memfree(layouts);
+
+	return String(buf).substr(0, 2);
+}
+
+String _get_full_layout_name_from_registry(HKL p_layout) {
+	String id = "SYSTEM\\CurrentControlSet\\Control\\Keyboard Layouts\\" + String::num_int64((int64_t)p_layout, 16, false).lpad(8, "0");
+	String ret;
+
+	HKEY hkey;
+	wchar_t layout_text[1024];
+	memset(layout_text, 0, 1024 * sizeof(wchar_t));
+
+	if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, (LPCWSTR)id.c_str(), 0, KEY_QUERY_VALUE, &hkey) != ERROR_SUCCESS) {
+		return ret;
+	}
+
+	DWORD buffer = 1024;
+	DWORD vtype = REG_SZ;
+	if (RegQueryValueExW(hkey, L"Layout Text", NULL, &vtype, (LPBYTE)layout_text, &buffer) == ERROR_SUCCESS) {
+		ret = String(layout_text);
+	}
+	RegCloseKey(hkey);
+	return ret;
+}
+
+String OS_Windows::keyboard_get_layout_name(int p_index) const {
+	int layout_count = GetKeyboardLayoutList(0, NULL);
+
+	ERR_FAIL_INDEX_V(p_index, layout_count, "");
+
+	HKL *layouts = (HKL *)memalloc(layout_count * sizeof(HKL));
+	GetKeyboardLayoutList(layout_count, layouts);
+
+	String ret = _get_full_layout_name_from_registry(layouts[p_index]); // Try reading full name from Windows registry, fallback to locale name if failed (e.g. on Wine).
+	if (ret == String()) {
+		wchar_t buf[LOCALE_NAME_MAX_LENGTH];
+		memset(buf, 0, LOCALE_NAME_MAX_LENGTH * sizeof(wchar_t));
+		LCIDToLocaleName(MAKELCID(LOWORD(layouts[p_index]), SORT_DEFAULT), buf, LOCALE_NAME_MAX_LENGTH, 0);
+
+		wchar_t name[1024];
+		memset(name, 0, 1024 * sizeof(wchar_t));
+		GetLocaleInfoEx(buf, LOCALE_SLOCALIZEDDISPLAYNAME, (LPWSTR)&name, 1024);
+
+		ret = String(name);
+	}
+	memfree(layouts);
+
+	return ret;
 }
 
 void OS_Windows::release_rendering_thread() {

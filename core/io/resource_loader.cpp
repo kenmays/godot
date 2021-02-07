@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -275,7 +275,8 @@ RES ResourceLoader::_load(const String &p_path, const String &p_original_path, c
 		return res;
 	}
 
-	ERR_FAIL_COND_V_MSG(found, RES(), "Failed loading resource: " + p_path + ".");
+	ERR_FAIL_COND_V_MSG(found, RES(),
+			vformat("Failed loading resource: %s. Make sure resources have been imported by opening the project in the editor at least once.", p_path));
 
 #ifdef TOOLS_ENABLED
 	FileAccessRef file_check = FileAccess::create(FileAccess::ACCESS_RESOURCES);
@@ -896,6 +897,9 @@ void ResourceLoader::load_translation_remaps() {
 
 void ResourceLoader::clear_translation_remaps() {
 	translation_remaps.clear();
+	while (remapped_list.first() != nullptr) {
+		remapped_list.remove(remapped_list.first());
+	}
 }
 
 void ResourceLoader::load_path_remaps() {
@@ -952,7 +956,7 @@ bool ResourceLoader::add_custom_resource_format_loader(String script_path) {
 
 	ERR_FAIL_COND_V_MSG(obj == NULL, false, "Cannot instance script as custom resource loader, expected 'ResourceFormatLoader' inheritance, got: " + String(ibt) + ".");
 
-	ResourceFormatLoader *crl = Object::cast_to<ResourceFormatLoader>(obj);
+	Ref<ResourceFormatLoader> crl = Object::cast_to<ResourceFormatLoader>(obj);
 	crl->set_script(s.get_ref_ptr());
 	ResourceLoader::add_resource_format_loader(crl);
 

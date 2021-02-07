@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -670,22 +670,20 @@ void FindInFilesPanel::_on_result_found(String fpath, int line_number, int begin
 	// Do this first because it resets properties of the cell...
 	item->set_cell_mode(text_index, TreeItem::CELL_MODE_CUSTOM);
 
-	String item_text = vformat("%3s:    %s", line_number, text.replace("\t", "    "));
+	// Trim result item line
+	int old_text_size = text.size();
+	text = text.strip_edges(true, false);
+	int chars_removed = old_text_size - text.size();
+	String start = vformat("%3s: ", line_number);
 
-	item->set_text(text_index, item_text);
+	item->set_text(text_index, start + text);
 	item->set_custom_draw(text_index, this, "_draw_result_text");
-
-	Ref<Font> font = _results_display->get_font("font");
-
-	float raw_text_width = font->get_string_size(text).x;
-	float item_text_width = font->get_string_size(item_text).x;
 
 	Result r;
 	r.line_number = line_number;
 	r.begin = begin;
 	r.end = end;
-	r.draw_begin = (item_text_width - raw_text_width) + font->get_string_size(text.left(r.begin)).x;
-	r.draw_width = font->get_string_size(text.substr(r.begin, r.end - r.begin)).x;
+	r.begin_trimmed = begin - chars_removed + start.size() - 1;
 	_result_items[item] = r;
 
 	if (_with_replace) {
@@ -705,10 +703,12 @@ void FindInFilesPanel::draw_result_text(Object *item_obj, Rect2 rect) {
 	if (!E)
 		return;
 	Result r = E->value();
+	String item_text = item->get_text(_with_replace ? 1 : 0);
+	Ref<Font> font = _results_display->get_font("font");
 
 	Rect2 match_rect = rect;
-	match_rect.position.x += r.draw_begin;
-	match_rect.size.x = r.draw_width;
+	match_rect.position.x += font->get_string_size(item_text.left(r.begin_trimmed)).x;
+	match_rect.size.x = font->get_string_size(_search_text_label->get_text()).x;
 	match_rect.position.y += 1 * EDSCALE;
 	match_rect.size.y -= 2 * EDSCALE;
 
@@ -732,8 +732,19 @@ void FindInFilesPanel::_on_item_edited() {
 }
 
 void FindInFilesPanel::_on_finished() {
+	String results_text;
+	int result_count = _result_items.size();
+	int file_count = _file_items.size();
 
-	_status_label->set_text(TTR("Search complete"));
+	if (result_count == 1 && file_count == 1) {
+		results_text = vformat(TTR("%d match in %d file."), result_count, file_count);
+	} else if (result_count != 1 && file_count == 1) {
+		results_text = vformat(TTR("%d matches in %d file."), result_count, file_count);
+	} else {
+		results_text = vformat(TTR("%d matches in %d files."), result_count, file_count);
+	}
+
+	_status_label->set_text(results_text);
 	update_replace_buttons();
 	set_progress_visible(false);
 	_refresh_button->show();

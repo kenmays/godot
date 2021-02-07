@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -350,21 +350,23 @@ void CreateDialog::_update_search() {
 
 			bool found = false;
 			String type2 = type;
+			bool cpp_type2 = cpp_type;
 
 			if (!cpp_type && !search_loaded_scripts.has(type)) {
 				search_loaded_scripts[type] = ed.script_class_load_script(type);
 			}
 
-			while (type2 != "" && (cpp_type ? ClassDB::is_parent_class(type2, base_type) : ed.script_class_is_parent(type2, base_type)) && type2 != base_type) {
+			while (type2 != "" && (cpp_type2 ? ClassDB::is_parent_class(type2, base_type) : ed.script_class_is_parent(type2, base_type)) && type2 != base_type) {
 				if (search_box->get_text().is_subsequence_ofi(type2)) {
 
 					found = true;
 					break;
 				}
 
-				type2 = cpp_type ? ClassDB::get_parent_class(type2) : ed.script_class_get_base(type2);
+				type2 = cpp_type2 ? ClassDB::get_parent_class(type2) : ed.script_class_get_base(type2);
+				cpp_type2 = cpp_type2 || ClassDB::class_exists(type2); // Built-in class can't inherit from custom type, so we can skip the check if it's already true.
 
-				if (!cpp_type && !search_loaded_scripts.has(type2)) {
+				if (!cpp_type2 && !search_loaded_scripts.has(type2)) {
 					search_loaded_scripts[type2] = ed.script_class_load_script(type2);
 				}
 			}
@@ -513,7 +515,7 @@ String CreateDialog::get_selected_type() {
 		return String();
 }
 
-Object *CreateDialog::instance_selected() {
+Variant CreateDialog::instance_selected() {
 
 	TreeItem *selected = search_options->get_selected();
 
@@ -527,7 +529,7 @@ Object *CreateDialog::instance_selected() {
 
 		if (custom != String()) {
 			if (ScriptServer::is_global_class(custom)) {
-				Object *obj = EditorNode::get_editor_data().script_class_instance(custom);
+				Variant obj = EditorNode::get_editor_data().script_class_instance(custom);
 				Node *n = Object::cast_to<Node>(obj);
 				if (n)
 					n->set_name(custom);
@@ -539,7 +541,7 @@ Object *CreateDialog::instance_selected() {
 		}
 	}
 
-	return NULL;
+	return Variant();
 }
 
 void CreateDialog::_item_selected() {

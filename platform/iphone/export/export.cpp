@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -39,7 +39,9 @@
 #include "editor/editor_export.h"
 #include "editor/editor_node.h"
 #include "editor/editor_settings.h"
+#include "main/splash.gen.h"
 #include "platform/iphone/logo.gen.h"
+#include "platform/iphone/plugin/godot_plugin_config.h"
 #include "string.h"
 
 #include <sys/stat.h>
@@ -51,6 +53,13 @@ class EditorExportPlatformIOS : public EditorExportPlatform {
 	int version_code;
 
 	Ref<ImageTexture> logo;
+
+	// Plugins
+	volatile bool plugins_changed;
+	Thread *check_for_changes_thread;
+	volatile bool quit_request;
+	Mutex *plugins_lock;
+	Vector<PluginConfigIOS> plugins;
 
 	typedef Error (*FileHandler)(String p_file, void *p_userdata);
 	static Error _walk_dir_recursive(DirAccess *p_da, FileHandler p_handler, void *p_userdata);
@@ -67,6 +76,7 @@ class EditorExportPlatformIOS : public EditorExportPlatform {
 		String modules_fileref;
 		String modules_buildphase;
 		String modules_buildgrp;
+		Vector<String> capabilities;
 	};
 	struct ExportArchitecture {
 
@@ -87,21 +97,25 @@ class EditorExportPlatformIOS : public EditorExportPlatform {
 	struct IOSExportAsset {
 		String exported_path;
 		bool is_framework; // framework is anything linked to the binary, otherwise it's a resource
+		bool should_embed;
 	};
 
 	String _get_additional_plist_content();
 	String _get_linker_flags();
 	String _get_cpp_code();
 	void _fix_config_file(const Ref<EditorExportPreset> &p_preset, Vector<uint8_t> &pfile, const IOSConfigData &p_config, bool p_debug);
-	Error _export_loading_screens(const Ref<EditorExportPreset> &p_preset, const String &p_dest_dir);
+	Error _export_loading_screen_images(const Ref<EditorExportPreset> &p_preset, const String &p_dest_dir);
+	Error _export_loading_screen_file(const Ref<EditorExportPreset> &p_preset, const String &p_dest_dir);
 	Error _export_icons(const Ref<EditorExportPreset> &p_preset, const String &p_iconset_dir);
 
 	Vector<ExportArchitecture> _get_supported_architectures();
 	Vector<String> _get_preset_architectures(const Ref<EditorExportPreset> &p_preset);
 
 	void _add_assets_to_project(const Ref<EditorExportPreset> &p_preset, Vector<uint8_t> &p_project_data, const Vector<IOSExportAsset> &p_additional_assets);
-	Error _export_additional_assets(const String &p_out_dir, const Vector<String> &p_assets, bool p_is_framework, Vector<IOSExportAsset> &r_exported_assets);
+	Error _copy_asset(const String &p_out_dir, const String &p_asset, const String *p_custom_file_name, bool p_is_framework, bool p_should_embed, Vector<IOSExportAsset> &r_exported_assets);
+	Error _export_additional_assets(const String &p_out_dir, const Vector<String> &p_assets, bool p_is_framework, bool p_should_embed, Vector<IOSExportAsset> &r_exported_assets);
 	Error _export_additional_assets(const String &p_out_dir, const Vector<SharedObject> &p_libraries, Vector<IOSExportAsset> &r_exported_assets);
+	Error _export_ios_plugins(const Ref<EditorExportPreset> &p_preset, IOSConfigData &p_config_data, const String &dest_dir, Vector<IOSExportAsset> &r_exported_assets, bool p_debug);
 
 	bool is_package_name_valid(const String &p_package, String *r_error = NULL) const {
 
@@ -127,6 +141,43 @@ class EditorExportPlatformIOS : public EditorExportPlatform {
 		return true;
 	}
 
+	static void _check_for_changes_poll_thread(void *ud) {
+		EditorExportPlatformIOS *ea = (EditorExportPlatformIOS *)ud;
+
+		while (!ea->quit_request) {
+			// Nothing to do if we already know the plugins have changed.
+			if (!ea->plugins_changed) {
+
+				ea->plugins_lock->lock();
+
+				Vector<PluginConfigIOS> loaded_plugins = get_plugins();
+
+				if (ea->plugins.size() != loaded_plugins.size()) {
+					ea->plugins_changed = true;
+				} else {
+					for (int i = 0; i < ea->plugins.size(); i++) {
+						if (ea->plugins[i].name != loaded_plugins[i].name || ea->plugins[i].last_updated != loaded_plugins[i].last_updated) {
+							ea->plugins_changed = true;
+							break;
+						}
+					}
+				}
+
+				ea->plugins_lock->unlock();
+			}
+
+			uint64_t wait = 3000000;
+			uint64_t time = OS::get_singleton()->get_ticks_usec();
+			while (OS::get_singleton()->get_ticks_usec() - time < wait) {
+				OS::get_singleton()->delay_usec(300000);
+
+				if (ea->quit_request) {
+					break;
+				}
+			}
+		}
+	}
+
 protected:
 	virtual void get_preset_features(const Ref<EditorExportPreset> &p_preset, List<String> *r_features);
 	virtual void get_export_options(List<ExportOption> *r_options);
@@ -136,13 +187,22 @@ public:
 	virtual String get_os_name() const { return "iOS"; }
 	virtual Ref<Texture> get_logo() const { return logo; }
 
+	virtual bool should_update_export_options() {
+		bool export_options_changed = plugins_changed;
+		if (export_options_changed) {
+			// don't clear unless we're reporting true, to avoid race
+			plugins_changed = false;
+		}
+		return export_options_changed;
+	}
+
 	virtual List<String> get_binary_extensions(const Ref<EditorExportPreset> &p_preset) const {
 		List<String> list;
 		list.push_back("ipa");
 		return list;
 	}
+
 	virtual Error export_project(const Ref<EditorExportPreset> &p_preset, bool p_debug, const String &p_path, int p_flags = 0);
-	virtual void add_module_code(const Ref<EditorExportPreset> &p_preset, IOSConfigData &p_config_data, const String &p_name, const String &p_fid, const String &p_gid);
 
 	virtual bool can_export(const Ref<EditorExportPreset> &p_preset, String &r_error, bool &r_missing_templates) const;
 
@@ -157,18 +217,93 @@ public:
 
 	EditorExportPlatformIOS();
 	~EditorExportPlatformIOS();
+
+	/// List the gdip files in the directory specified by the p_path parameter.
+	static Vector<String> list_plugin_config_files(const String &p_path, bool p_check_directories) {
+		Vector<String> dir_files;
+		DirAccessRef da = DirAccess::open(p_path);
+		if (da) {
+			da->list_dir_begin();
+			while (true) {
+				String file = da->get_next();
+				if (file.empty()) {
+					break;
+				}
+
+				if (file == "." || file == "..") {
+					continue;
+				}
+
+				if (da->current_is_hidden()) {
+					continue;
+				}
+
+				if (da->current_is_dir()) {
+					if (p_check_directories) {
+						Vector<String> directory_files = list_plugin_config_files(p_path.plus_file(file), false);
+						for (int i = 0; i < directory_files.size(); ++i) {
+							dir_files.push_back(file.plus_file(directory_files[i]));
+						}
+					}
+
+					continue;
+				}
+
+				if (file.ends_with(PluginConfigIOS::PLUGIN_CONFIG_EXT)) {
+					dir_files.push_back(file);
+				}
+			}
+			da->list_dir_end();
+		}
+
+		return dir_files;
+	}
+
+	static Vector<PluginConfigIOS> get_plugins() {
+		Vector<PluginConfigIOS> loaded_plugins;
+
+		String plugins_dir = ProjectSettings::get_singleton()->get_resource_path().plus_file("ios/plugins");
+
+		if (DirAccess::exists(plugins_dir)) {
+			Vector<String> plugins_filenames = list_plugin_config_files(plugins_dir, true);
+
+			if (!plugins_filenames.empty()) {
+				Ref<ConfigFile> config_file = memnew(ConfigFile);
+				for (int i = 0; i < plugins_filenames.size(); i++) {
+					PluginConfigIOS config = load_plugin_config(config_file, plugins_dir.plus_file(plugins_filenames[i]));
+					if (config.valid_config) {
+						loaded_plugins.push_back(config);
+					} else {
+						print_error("Invalid plugin config file " + plugins_filenames[i]);
+					}
+				}
+			}
+		}
+
+		return loaded_plugins;
+	}
+
+	static Vector<PluginConfigIOS> get_enabled_plugins(const Ref<EditorExportPreset> &p_presets) {
+		Vector<PluginConfigIOS> enabled_plugins;
+		Vector<PluginConfigIOS> all_plugins = get_plugins();
+		for (int i = 0; i < all_plugins.size(); i++) {
+			PluginConfigIOS plugin = all_plugins[i];
+			bool enabled = p_presets->get("plugins/" + plugin.name);
+			if (enabled) {
+				enabled_plugins.push_back(plugin);
+			}
+		}
+
+		return enabled_plugins;
+	}
 };
 
 void EditorExportPlatformIOS::get_preset_features(const Ref<EditorExportPreset> &p_preset, List<String> *r_features) {
 
 	String driver = ProjectSettings::get_singleton()->get("rendering/quality/driver/driver_name");
-	if (driver == "GLES2") {
-		r_features->push_back("etc");
-	} else if (driver == "GLES3") {
+	r_features->push_back("pvrtc");
+	if (driver == "GLES3") {
 		r_features->push_back("etc2");
-		if (ProjectSettings::get_singleton()->get("rendering/quality/driver/fallback_to_gles2")) {
-			r_features->push_back("etc");
-		}
 	}
 
 	Vector<String> architectures = _get_preset_architectures(p_preset);
@@ -209,12 +344,16 @@ void EditorExportPlatformIOS::get_export_options(List<ExportOption> *r_options) 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/debug", PROPERTY_HINT_GLOBAL_FILE, "*.zip"), ""));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/release", PROPERTY_HINT_GLOBAL_FILE, "*.zip"), ""));
 
+	Vector<ExportArchitecture> architectures = _get_supported_architectures();
+	for (int i = 0; i < architectures.size(); ++i) {
+		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "architectures/" + architectures[i].name), architectures[i].is_default));
+	}
+
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "application/app_store_team_id"), ""));
 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "application/provisioning_profile_uuid_debug"), ""));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "application/code_sign_identity_debug", PROPERTY_HINT_PLACEHOLDER_TEXT, "iPhone Developer"), "iPhone Developer"));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::INT, "application/export_method_debug", PROPERTY_HINT_ENUM, "App Store,Development,Ad-Hoc,Enterprise"), 1));
-
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "application/provisioning_profile_uuid_release"), ""));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "application/code_sign_identity_release", PROPERTY_HINT_PLACEHOLDER_TEXT, "iPhone Distribution"), ""));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::INT, "application/export_method_release", PROPERTY_HINT_ENUM, "App Store,Development,Ad-Hoc,Enterprise"), 0));
@@ -227,12 +366,15 @@ void EditorExportPlatformIOS::get_export_options(List<ExportOption> *r_options) 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "application/version"), "1.0"));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "application/copyright"), ""));
 
-	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "capabilities/arkit"), false));
-	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "capabilities/camera"), false));
+	Vector<PluginConfigIOS> found_plugins = get_plugins();
+	for (int i = 0; i < found_plugins.size(); i++) {
+		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "plugins/" + found_plugins[i].name), false));
+	}
+
+	plugins_changed = false;
+	plugins = found_plugins;
 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "capabilities/access_wifi"), false));
-	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "capabilities/game_center"), true));
-	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "capabilities/in_app_purchases"), false));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "capabilities/push_notifications"), false));
 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "user_data/accessible_from_files_app"), false));
@@ -257,13 +399,15 @@ void EditorExportPlatformIOS::get_export_options(List<ExportOption> *r_options) 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "optional_icons/spotlight_40x40", PROPERTY_HINT_FILE, "*.png"), "")); // Spotlight
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "optional_icons/spotlight_80x80", PROPERTY_HINT_FILE, "*.png"), "")); // Spotlight on devices with retina display
 
+	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "storyboard/use_launch_screen_storyboard"), false));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::INT, "storyboard/image_scale_mode", PROPERTY_HINT_ENUM, "Same as Logo,Center,Scale To Fit,Scale To Fill,Scale"), 0));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "storyboard/custom_image@2x", PROPERTY_HINT_FILE, "*.png"), ""));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "storyboard/custom_image@3x", PROPERTY_HINT_FILE, "*.png"), ""));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "storyboard/use_custom_bg_color"), false));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::COLOR, "storyboard/custom_bg_color"), Color()));
+
 	for (uint64_t i = 0; i < sizeof(loading_screen_infos) / sizeof(loading_screen_infos[0]); ++i) {
 		r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, loading_screen_infos[i].preset_key, PROPERTY_HINT_FILE, "*.png"), ""));
-	}
-
-	Vector<ExportArchitecture> architectures = _get_supported_architectures();
-	for (int i = 0; i < architectures.size(); ++i) {
-		r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "architectures/" + architectures[i].name), architectures[i].is_default));
 	}
 }
 
@@ -273,6 +417,12 @@ void EditorExportPlatformIOS::_fix_config_file(const Ref<EditorExportPreset> &p_
 		"development",
 		"ad-hoc",
 		"enterprise"
+	};
+	static const String storyboard_image_scale_mode[] = {
+		"center",
+		"scaleAspectFit",
+		"scaleAspectFill",
+		"scaleToFill"
 	};
 	String str;
 	String strnew;
@@ -331,33 +481,23 @@ void EditorExportPlatformIOS::_fix_config_file(const Ref<EditorExportPreset> &p_
 			strnew += lines[i].replace("$docs_in_place", ((bool)p_preset->get("user_data/accessible_from_files_app")) ? "<true/>" : "<false/>") + "\n";
 		} else if (lines[i].find("$docs_sharing") != -1) {
 			strnew += lines[i].replace("$docs_sharing", ((bool)p_preset->get("user_data/accessible_from_itunes_sharing")) ? "<true/>" : "<false/>") + "\n";
-		} else if (lines[i].find("$access_wifi") != -1) {
-			bool is_on = p_preset->get("capabilities/access_wifi");
-			strnew += lines[i].replace("$access_wifi", is_on ? "1" : "0") + "\n";
-		} else if (lines[i].find("$game_center") != -1) {
-			bool is_on = p_preset->get("capabilities/game_center");
-			strnew += lines[i].replace("$game_center", is_on ? "1" : "0") + "\n";
-		} else if (lines[i].find("$in_app_purchases") != -1) {
-			bool is_on = p_preset->get("capabilities/in_app_purchases");
-			strnew += lines[i].replace("$in_app_purchases", is_on ? "1" : "0") + "\n";
-		} else if (lines[i].find("$push_notifications") != -1) {
+		} else if (lines[i].find("$entitlements_push_notifications") != -1) {
 			bool is_on = p_preset->get("capabilities/push_notifications");
-			strnew += lines[i].replace("$push_notifications", is_on ? "1" : "0") + "\n";
+			strnew += lines[i].replace("$entitlements_push_notifications", is_on ? "<key>aps-environment</key><string>development</string>" : "") + "\n";
 		} else if (lines[i].find("$required_device_capabilities") != -1) {
 			String capabilities;
 
 			// I've removed armv7 as we can run on 64bit only devices
 			// Note that capabilities listed here are requirements for the app to be installed.
 			// They don't enable anything.
+			Vector<String> capabilities_list = p_config.capabilities;
 
-			if ((bool)p_preset->get("capabilities/arkit")) {
-				capabilities += "<string>arkit</string>\n";
+			if ((bool)p_preset->get("capabilities/access_wifi") && capabilities_list.find("wifi") != -1) {
+				capabilities_list.push_back("wifi");
 			}
-			if ((bool)p_preset->get("capabilities/game_center")) {
-				capabilities += "<string>gamekit</string>\n";
-			}
-			if ((bool)p_preset->get("capabilities/access_wifi")) {
-				capabilities += "<string>wifi</string>\n";
+
+			for (int idx = 0; idx < capabilities_list.size(); idx++) {
+				capabilities += "<string>" + capabilities_list[idx] + "</string>\n";
 			}
 
 			strnew += lines[i].replace("$required_device_capabilities", capabilities);
@@ -387,6 +527,60 @@ void EditorExportPlatformIOS::_fix_config_file(const Ref<EditorExportPreset> &p_
 		} else if (lines[i].find("$photolibrary_usage_description") != -1) {
 			String description = p_preset->get("privacy/photolibrary_usage_description");
 			strnew += lines[i].replace("$photolibrary_usage_description", description) + "\n";
+		} else if (lines[i].find("$plist_launch_screen_name") != -1) {
+			bool is_on = p_preset->get("storyboard/use_launch_screen_storyboard");
+			String value = is_on ? "<key>UILaunchStoryboardName</key>\n<string>Launch Screen</string>" : "";
+			strnew += lines[i].replace("$plist_launch_screen_name", value) + "\n";
+		} else if (lines[i].find("$pbx_launch_screen_file_reference") != -1) {
+			bool is_on = p_preset->get("storyboard/use_launch_screen_storyboard");
+			String value = is_on ? "90DD2D9D24B36E8000717FE1 = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; path = \"Launch Screen.storyboard\"; sourceTree = \"<group>\"; };" : "";
+			strnew += lines[i].replace("$pbx_launch_screen_file_reference", value) + "\n";
+		} else if (lines[i].find("$pbx_launch_screen_copy_files") != -1) {
+			bool is_on = p_preset->get("storyboard/use_launch_screen_storyboard");
+			String value = is_on ? "90DD2D9D24B36E8000717FE1 /* Launch Screen.storyboard */," : "";
+			strnew += lines[i].replace("$pbx_launch_screen_copy_files", value) + "\n";
+		} else if (lines[i].find("$pbx_launch_screen_build_phase") != -1) {
+			bool is_on = p_preset->get("storyboard/use_launch_screen_storyboard");
+			String value = is_on ? "90DD2D9E24B36E8000717FE1 /* Launch Screen.storyboard in Resources */," : "";
+			strnew += lines[i].replace("$pbx_launch_screen_build_phase", value) + "\n";
+		} else if (lines[i].find("$pbx_launch_screen_build_reference") != -1) {
+			bool is_on = p_preset->get("storyboard/use_launch_screen_storyboard");
+			String value = is_on ? "90DD2D9E24B36E8000717FE1 /* Launch Screen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 90DD2D9D24B36E8000717FE1 /* Launch Screen.storyboard */; };" : "";
+			strnew += lines[i].replace("$pbx_launch_screen_build_reference", value) + "\n";
+		} else if (lines[i].find("$pbx_launch_image_usage_setting") != -1) {
+			bool is_on = p_preset->get("storyboard/use_launch_screen_storyboard");
+			String value = is_on ? "" : "ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;";
+			strnew += lines[i].replace("$pbx_launch_image_usage_setting", value) + "\n";
+		} else if (lines[i].find("$launch_screen_image_mode") != -1) {
+			int image_scale_mode = p_preset->get("storyboard/image_scale_mode");
+			String value;
+
+			switch (image_scale_mode) {
+				case 0: {
+					String logo_path = ProjectSettings::get_singleton()->get("application/boot_splash/image");
+					bool is_on = ProjectSettings::get_singleton()->get("application/boot_splash/fullsize");
+					// If custom logo is not specified, Godot does not scale default one, so we should do the same.
+					value = (is_on && logo_path.length() > 0) ? "scaleAspectFit" : "center";
+				} break;
+				default: {
+					value = storyboard_image_scale_mode[image_scale_mode - 1];
+				}
+			}
+
+			strnew += lines[i].replace("$launch_screen_image_mode", value) + "\n";
+		} else if (lines[i].find("$launch_screen_background_color") != -1) {
+			bool use_custom = p_preset->get("storyboard/use_custom_bg_color");
+			Color color = use_custom ? p_preset->get("storyboard/custom_bg_color") : ProjectSettings::get_singleton()->get("application/boot_splash/bg_color");
+			const String value_format = "red=\"$red\" green=\"$green\" blue=\"$blue\" alpha=\"$alpha\"";
+
+			Dictionary value_dictionary;
+			value_dictionary["red"] = color.r;
+			value_dictionary["green"] = color.g;
+			value_dictionary["blue"] = color.b;
+			value_dictionary["alpha"] = color.a;
+			String value = value_format.format(value_dictionary, "$_");
+
+			strnew += lines[i].replace("$launch_screen_background_color", value) + "\n";
 		} else {
 			strnew += lines[i] + "\n";
 		}
@@ -517,7 +711,75 @@ Error EditorExportPlatformIOS::_export_icons(const Ref<EditorExportPreset> &p_pr
 	return OK;
 }
 
-Error EditorExportPlatformIOS::_export_loading_screens(const Ref<EditorExportPreset> &p_preset, const String &p_dest_dir) {
+Error EditorExportPlatformIOS::_export_loading_screen_file(const Ref<EditorExportPreset> &p_preset, const String &p_dest_dir) {
+	const String custom_launch_image_2x = p_preset->get("storyboard/custom_image@2x");
+	const String custom_launch_image_3x = p_preset->get("storyboard/custom_image@3x");
+
+	if (custom_launch_image_2x.length() > 0 && custom_launch_image_3x.length() > 0) {
+		Ref<Image> image;
+		String image_path = p_dest_dir.plus_file("splash@2x.png");
+		image.instance();
+		Error err = image->load(custom_launch_image_2x);
+
+		if (err) {
+			image.unref();
+			return err;
+		}
+
+		if (image->save_png(image_path) != OK) {
+			return ERR_FILE_CANT_WRITE;
+		}
+
+		image.unref();
+		image_path = p_dest_dir.plus_file("splash@3x.png");
+		image.instance();
+		err = image->load(custom_launch_image_3x);
+
+		if (err) {
+			image.unref();
+			return err;
+		}
+
+		if (image->save_png(image_path) != OK) {
+			return ERR_FILE_CANT_WRITE;
+		}
+	} else {
+		Ref<Image> splash;
+
+		const String splash_path = ProjectSettings::get_singleton()->get("application/boot_splash/image");
+
+		if (!splash_path.empty()) {
+			splash.instance();
+			const Error err = splash->load(splash_path);
+			if (err) {
+				splash.unref();
+			}
+		}
+
+		if (splash.is_null()) {
+			splash = Ref<Image>(memnew(Image(boot_splash_png)));
+		}
+
+		// Using same image for both @2x and @3x
+		// because Godot's own boot logo uses single image for all resolutions.
+		// Also not using @1x image, because devices using this image variant
+		// are not supported by iOS 9, which is minimal target.
+		const String splash_png_path_2x = p_dest_dir.plus_file("splash@2x.png");
+		const String splash_png_path_3x = p_dest_dir.plus_file("splash@3x.png");
+
+		if (splash->save_png(splash_png_path_2x) != OK) {
+			return ERR_FILE_CANT_WRITE;
+		}
+
+		if (splash->save_png(splash_png_path_3x) != OK) {
+			return ERR_FILE_CANT_WRITE;
+		}
+	}
+
+	return OK;
+}
+
+Error EditorExportPlatformIOS::_export_loading_screen_images(const Ref<EditorExportPreset> &p_preset, const String &p_dest_dir) {
 	DirAccess *da = DirAccess::open(p_dest_dir);
 	ERR_FAIL_COND_V_MSG(!da, ERR_CANT_OPEN, "Cannot open directory '" + p_dest_dir + "'.");
 
@@ -643,15 +905,6 @@ struct ExportLibsData {
 };
 
 void EditorExportPlatformIOS::_add_assets_to_project(const Ref<EditorExportPreset> &p_preset, Vector<uint8_t> &p_project_data, const Vector<IOSExportAsset> &p_additional_assets) {
-	Vector<Ref<EditorExportPlugin> > export_plugins = EditorExport::get_singleton()->get_export_plugins();
-	Vector<String> frameworks;
-	for (int i = 0; i < export_plugins.size(); ++i) {
-		Vector<String> plugin_frameworks = export_plugins[i]->get_ios_frameworks();
-		for (int j = 0; j < plugin_frameworks.size(); ++j) {
-			frameworks.push_back(plugin_frameworks[j]);
-		}
-	}
-
 	// that is just a random number, we just need Godot IDs not to clash with
 	// existing IDs in the project.
 	PbxId current_id = { 0x58938401, 0, 0 };
@@ -660,17 +913,37 @@ void EditorExportPlatformIOS::_add_assets_to_project(const Ref<EditorExportPrese
 	String pbx_frameworks_refs;
 	String pbx_resources_build;
 	String pbx_resources_refs;
+	String pbx_embeded_frameworks;
 
 	const String file_info_format = String("$build_id = {isa = PBXBuildFile; fileRef = $ref_id; };\n") +
 									"$ref_id = {isa = PBXFileReference; lastKnownFileType = $file_type; name = \"$name\"; path = \"$file_path\"; sourceTree = \"<group>\"; };\n";
+
 	for (int i = 0; i < p_additional_assets.size(); ++i) {
+		String additional_asset_info_format = file_info_format;
+
 		String build_id = (++current_id).str();
 		String ref_id = (++current_id).str();
+		String framework_id = "";
+
 		const IOSExportAsset &asset = p_additional_assets[i];
 
 		String type;
 		if (asset.exported_path.ends_with(".framework")) {
+			if (asset.should_embed) {
+				additional_asset_info_format += "$framework_id = {isa = PBXBuildFile; fileRef = $ref_id; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };\n";
+				framework_id = (++current_id).str();
+				pbx_embeded_frameworks += framework_id + ",\n";
+			}
+
 			type = "wrapper.framework";
+		} else if (asset.exported_path.ends_with(".xcframework")) {
+			if (asset.should_embed) {
+				additional_asset_info_format += "$framework_id = {isa = PBXBuildFile; fileRef = $ref_id; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };\n";
+				framework_id = (++current_id).str();
+				pbx_embeded_frameworks += framework_id + ",\n";
+			}
+
+			type = "wrapper.xcframework";
 		} else if (asset.exported_path.ends_with(".dylib")) {
 			type = "compiled.mach-o.dylib";
 		} else if (asset.exported_path.ends_with(".a")) {
@@ -695,33 +968,14 @@ void EditorExportPlatformIOS::_add_assets_to_project(const Ref<EditorExportPrese
 		format_dict["name"] = asset.exported_path.get_file();
 		format_dict["file_path"] = asset.exported_path;
 		format_dict["file_type"] = type;
-		pbx_files += file_info_format.format(format_dict, "$_");
+		if (framework_id.length() > 0) {
+			format_dict["framework_id"] = framework_id;
+		}
+		pbx_files += additional_asset_info_format.format(format_dict, "$_");
 	}
 
 	// Note, frameworks like gamekit are always included in our project.pbxprof file
 	// even if turned off in capabilities.
-
-	// We do need our ARKit framework
-	if ((bool)p_preset->get("capabilities/arkit")) {
-		String build_id = (++current_id).str();
-		String ref_id = (++current_id).str();
-
-		if (pbx_frameworks_build.length() > 0) {
-			pbx_frameworks_build += ",\n";
-			pbx_frameworks_refs += ",\n";
-		}
-
-		pbx_frameworks_build += build_id;
-		pbx_frameworks_refs += ref_id;
-
-		Dictionary format_dict;
-		format_dict["build_id"] = build_id;
-		format_dict["ref_id"] = ref_id;
-		format_dict["name"] = "ARKit.framework";
-		format_dict["file_path"] = "System/Library/Frameworks/ARKit.framework";
-		format_dict["file_type"] = "wrapper.framework";
-		pbx_files += file_info_format.format(format_dict, "$_");
-	}
 
 	String str = String::utf8((const char *)p_project_data.ptr(), p_project_data.size());
 	str = str.replace("$additional_pbx_files", pbx_files);
@@ -729,6 +983,7 @@ void EditorExportPlatformIOS::_add_assets_to_project(const Ref<EditorExportPrese
 	str = str.replace("$additional_pbx_frameworks_refs", pbx_frameworks_refs);
 	str = str.replace("$additional_pbx_resources_build", pbx_resources_build);
 	str = str.replace("$additional_pbx_resources_refs", pbx_resources_refs);
+	str = str.replace("$pbx_embeded_frameworks", pbx_embeded_frameworks);
 
 	CharString cs = str.utf8();
 	p_project_data.resize(cs.size() - 1);
@@ -737,51 +992,175 @@ void EditorExportPlatformIOS::_add_assets_to_project(const Ref<EditorExportPrese
 	}
 }
 
-Error EditorExportPlatformIOS::_export_additional_assets(const String &p_out_dir, const Vector<String> &p_assets, bool p_is_framework, Vector<IOSExportAsset> &r_exported_assets) {
+Error EditorExportPlatformIOS::_copy_asset(const String &p_out_dir, const String &p_asset, const String *p_custom_file_name, bool p_is_framework, bool p_should_embed, Vector<IOSExportAsset> &r_exported_assets) {
 	DirAccess *filesystem_da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 	ERR_FAIL_COND_V_MSG(!filesystem_da, ERR_CANT_CREATE, "Cannot create DirAccess for path '" + p_out_dir + "'.");
+
+	String binary_name = p_out_dir.get_file().get_basename();
+
+	DirAccess *da = DirAccess::create_for_path(p_asset);
+	if (!da) {
+		memdelete(filesystem_da);
+		ERR_FAIL_V_MSG(ERR_CANT_CREATE, "Can't create directory: " + p_asset + ".");
+	}
+	bool file_exists = da->file_exists(p_asset);
+	bool dir_exists = da->dir_exists(p_asset);
+	if (!file_exists && !dir_exists) {
+		memdelete(da);
+		memdelete(filesystem_da);
+		return ERR_FILE_NOT_FOUND;
+	}
+
+	String base_dir = p_asset.get_base_dir().replace("res://", "");
+	String destination_dir;
+	String destination;
+	String asset_path;
+
+	bool create_framework = false;
+
+	if (p_is_framework && p_asset.ends_with(".dylib")) {
+		// For iOS we need to turn .dylib into .framework
+		// to be able to send application to AppStore
+		asset_path = String("dylibs").plus_file(base_dir);
+
+		String file_name;
+
+		if (!p_custom_file_name) {
+			file_name = p_asset.get_basename().get_file();
+		} else {
+			file_name = *p_custom_file_name;
+		}
+
+		String framework_name = file_name + ".framework";
+
+		asset_path = asset_path.plus_file(framework_name);
+		destination_dir = p_out_dir.plus_file(asset_path);
+		destination = destination_dir.plus_file(file_name);
+		create_framework = true;
+	} else if (p_is_framework && (p_asset.ends_with(".framework") || p_asset.ends_with(".xcframework"))) {
+		asset_path = String("dylibs").plus_file(base_dir);
+
+		String file_name;
+
+		if (!p_custom_file_name) {
+			file_name = p_asset.get_file();
+		} else {
+			file_name = *p_custom_file_name;
+		}
+
+		asset_path = asset_path.plus_file(file_name);
+		destination_dir = p_out_dir.plus_file(asset_path);
+		destination = destination_dir;
+	} else {
+		asset_path = base_dir;
+
+		String file_name;
+
+		if (!p_custom_file_name) {
+			file_name = p_asset.get_file();
+		} else {
+			file_name = *p_custom_file_name;
+		}
+
+		destination_dir = p_out_dir.plus_file(asset_path);
+		asset_path = asset_path.plus_file(file_name);
+		destination = p_out_dir.plus_file(asset_path);
+	}
+
+	if (!filesystem_da->dir_exists(destination_dir)) {
+		Error make_dir_err = filesystem_da->make_dir_recursive(destination_dir);
+		if (make_dir_err) {
+			memdelete(da);
+			memdelete(filesystem_da);
+			return make_dir_err;
+		}
+	}
+
+	Error err = dir_exists ? da->copy_dir(p_asset, destination) : da->copy(p_asset, destination);
+	memdelete(da);
+	if (err) {
+		memdelete(filesystem_da);
+		return err;
+	}
+	IOSExportAsset exported_asset = { binary_name.plus_file(asset_path), p_is_framework, p_should_embed };
+	r_exported_assets.push_back(exported_asset);
+
+	if (create_framework) {
+		String file_name;
+
+		if (!p_custom_file_name) {
+			file_name = p_asset.get_basename().get_file();
+		} else {
+			file_name = *p_custom_file_name;
+		}
+
+		String framework_name = file_name + ".framework";
+
+		// Performing `install_name_tool -id @rpath/{name}.framework/{name} ./{name}` on dylib
+		{
+			List<String> install_name_args;
+			install_name_args.push_back("-id");
+			install_name_args.push_back(String("@rpath").plus_file(framework_name).plus_file(file_name));
+			install_name_args.push_back(destination);
+
+			OS::get_singleton()->execute("install_name_tool", install_name_args, true);
+		}
+
+		// Creating Info.plist
+		{
+			String info_plist_format = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+									   "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+									   "<plist version=\"1.0\">\n"
+									   "<dict>\n"
+									   "<key>CFBundleShortVersionString</key>\n"
+									   "<string>1.0</string>\n"
+									   "<key>CFBundleIdentifier</key>\n"
+									   "<string>com.gdnative.framework.$name</string>\n"
+									   "<key>CFBundleName</key>\n"
+									   "<string>$name</string>\n"
+									   "<key>CFBundleExecutable</key>\n"
+									   "<string>$name</string>\n"
+									   "<key>DTPlatformName</key>\n"
+									   "<string>iphoneos</string>\n"
+									   "<key>CFBundleInfoDictionaryVersion</key>\n"
+									   "<string>6.0</string>\n"
+									   "<key>CFBundleVersion</key>\n"
+									   "<string>1</string>\n"
+									   "<key>CFBundlePackageType</key>\n"
+									   "<string>FMWK</string>\n"
+									   "<key>MinimumOSVersion</key>\n"
+									   "<string>10.0</string>\n"
+									   "</dict>\n"
+									   "</plist>";
+
+			String info_plist = info_plist_format.replace("$name", file_name);
+
+			FileAccess *f = FileAccess::open(destination_dir.plus_file("Info.plist"), FileAccess::WRITE);
+			if (f) {
+				f->store_string(info_plist);
+				f->close();
+				memdelete(f);
+			}
+		}
+	}
+
+	memdelete(filesystem_da);
+
+	return OK;
+}
+
+Error EditorExportPlatformIOS::_export_additional_assets(const String &p_out_dir, const Vector<String> &p_assets, bool p_is_framework, bool p_should_embed, Vector<IOSExportAsset> &r_exported_assets) {
 	for (int f_idx = 0; f_idx < p_assets.size(); ++f_idx) {
 		String asset = p_assets[f_idx];
 		if (!asset.begins_with("res://")) {
 			// either SDK-builtin or already a part of the export template
-			IOSExportAsset exported_asset = { asset, p_is_framework };
+			IOSExportAsset exported_asset = { asset, p_is_framework, p_should_embed };
 			r_exported_assets.push_back(exported_asset);
 		} else {
-			DirAccess *da = DirAccess::create_for_path(asset);
-			if (!da) {
-				memdelete(filesystem_da);
-				ERR_FAIL_V_MSG(ERR_CANT_CREATE, "Can't create directory: " + asset + ".");
-			}
-			bool file_exists = da->file_exists(asset);
-			bool dir_exists = da->dir_exists(asset);
-			if (!file_exists && !dir_exists) {
-				memdelete(da);
-				memdelete(filesystem_da);
-				return ERR_FILE_NOT_FOUND;
-			}
-			String additional_dir = p_is_framework && asset.ends_with(".dylib") ? "/dylibs/" : "/";
-			String destination_dir = p_out_dir + additional_dir + asset.get_base_dir().replace("res://", "");
-			if (!filesystem_da->dir_exists(destination_dir)) {
-				Error make_dir_err = filesystem_da->make_dir_recursive(destination_dir);
-				if (make_dir_err) {
-					memdelete(da);
-					memdelete(filesystem_da);
-					return make_dir_err;
-				}
-			}
-
-			String destination = destination_dir.plus_file(asset.get_file());
-			Error err = dir_exists ? da->copy_dir(asset, destination) : da->copy(asset, destination);
-			memdelete(da);
-			if (err) {
-				memdelete(filesystem_da);
-				return err;
-			}
-			IOSExportAsset exported_asset = { destination, p_is_framework };
-			r_exported_assets.push_back(exported_asset);
+			Error err = _copy_asset(p_out_dir, asset, nullptr, p_is_framework, p_should_embed, r_exported_assets);
+			ERR_FAIL_COND_V(err, err);
 		}
 	}
-	memdelete(filesystem_da);
 
 	return OK;
 }
@@ -789,18 +1168,22 @@ Error EditorExportPlatformIOS::_export_additional_assets(const String &p_out_dir
 Error EditorExportPlatformIOS::_export_additional_assets(const String &p_out_dir, const Vector<SharedObject> &p_libraries, Vector<IOSExportAsset> &r_exported_assets) {
 	Vector<Ref<EditorExportPlugin> > export_plugins = EditorExport::get_singleton()->get_export_plugins();
 	for (int i = 0; i < export_plugins.size(); i++) {
-		Vector<String> frameworks = export_plugins[i]->get_ios_frameworks();
-		Error err = _export_additional_assets(p_out_dir, frameworks, true, r_exported_assets);
+		Vector<String> linked_frameworks = export_plugins[i]->get_ios_frameworks();
+		Error err = _export_additional_assets(p_out_dir, linked_frameworks, true, false, r_exported_assets);
+		ERR_FAIL_COND_V(err, err);
+
+		Vector<String> embedded_frameworks = export_plugins[i]->get_ios_embedded_frameworks();
+		err = _export_additional_assets(p_out_dir, embedded_frameworks, true, true, r_exported_assets);
 		ERR_FAIL_COND_V(err, err);
 
 		Vector<String> project_static_libs = export_plugins[i]->get_ios_project_static_libs();
 		for (int j = 0; j < project_static_libs.size(); j++)
 			project_static_libs.write[j] = project_static_libs[j].get_file(); // Only the file name as it's copied to the project
-		err = _export_additional_assets(p_out_dir, project_static_libs, true, r_exported_assets);
+		err = _export_additional_assets(p_out_dir, project_static_libs, true, true, r_exported_assets);
 		ERR_FAIL_COND_V(err, err);
 
 		Vector<String> ios_bundle_files = export_plugins[i]->get_ios_bundle_files();
-		err = _export_additional_assets(p_out_dir, ios_bundle_files, false, r_exported_assets);
+		err = _export_additional_assets(p_out_dir, ios_bundle_files, false, false, r_exported_assets);
 		ERR_FAIL_COND_V(err, err);
 	}
 
@@ -808,7 +1191,7 @@ Error EditorExportPlatformIOS::_export_additional_assets(const String &p_out_dir
 	for (int i = 0; i < p_libraries.size(); ++i) {
 		library_paths.push_back(p_libraries[i].path);
 	}
-	Error err = _export_additional_assets(p_out_dir, library_paths, true, r_exported_assets);
+	Error err = _export_additional_assets(p_out_dir, library_paths, true, true, r_exported_assets);
 	ERR_FAIL_COND_V(err, err);
 
 	return OK;
@@ -826,20 +1209,198 @@ Vector<String> EditorExportPlatformIOS::_get_preset_architectures(const Ref<Edit
 	return enabled_archs;
 }
 
-void EditorExportPlatformIOS::add_module_code(const Ref<EditorExportPreset> &p_preset, EditorExportPlatformIOS::IOSConfigData &p_config_data, const String &p_name, const String &p_fid, const String &p_gid) {
-	if ((bool)p_preset->get("capabilities/" + p_name)) {
-		//add module static library
-		print_line("ADDING MODULE: " + p_name);
+Error EditorExportPlatformIOS::_export_ios_plugins(const Ref<EditorExportPreset> &p_preset, IOSConfigData &p_config_data, const String &dest_dir, Vector<IOSExportAsset> &r_exported_assets, bool p_debug) {
+	String plugin_definition_cpp_code;
+	String plugin_initialization_cpp_code;
+	String plugin_deinitialization_cpp_code;
 
-		p_config_data.modules_buildfile += p_gid + " /* libgodot_" + p_name + "_module.a in Frameworks */ = {isa = PBXBuildFile; fileRef = " + p_fid + " /* libgodot_" + p_name + "_module.a */; };\n\t\t";
-		p_config_data.modules_fileref += p_fid + " /* libgodot_" + p_name + "_module.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = godot_" + p_name + "_module ; path = \"libgodot_" + p_name + "_module.a\"; sourceTree = \"<group>\"; };\n\t\t";
-		p_config_data.modules_buildphase += p_gid + " /* libgodot_" + p_name + "_module.a */,\n\t\t\t\t";
-		p_config_data.modules_buildgrp += p_fid + " /* libgodot_" + p_name + "_module.a */,\n\t\t\t\t";
-	} else {
-		//add stub function for disabled module
-		p_config_data.cpp_code += "void register_" + p_name + "_types() { /*stub*/ };\n";
-		p_config_data.cpp_code += "void unregister_" + p_name + "_types() { /*stub*/ };\n";
+	Vector<String> plugin_linked_dependencies;
+	Vector<String> plugin_embedded_dependencies;
+	Vector<String> plugin_files;
+
+	Vector<PluginConfigIOS> enabled_plugins = get_enabled_plugins(p_preset);
+
+	Vector<String> added_linked_dependenciy_names;
+	Vector<String> added_embedded_dependenciy_names;
+	HashMap<String, String> plist_values;
+
+	Set<String> plugin_linker_flags;
+
+	Error err;
+
+	for (int i = 0; i < enabled_plugins.size(); i++) {
+		PluginConfigIOS plugin = enabled_plugins[i];
+
+		// Export plugin binary.
+		String plugin_main_binary = get_plugin_main_binary(plugin, p_debug);
+		String plugin_binary_result_file = plugin.binary.get_file();
+		// We shouldn't embed .xcframework that contains static libraries.
+		// Static libraries are not embedded anyway.
+		err = _copy_asset(dest_dir, plugin_main_binary, &plugin_binary_result_file, true, false, r_exported_assets);
+
+		ERR_FAIL_COND_V(err, err);
+
+		// Adding dependencies.
+		// Use separate container for names to check for duplicates.
+		for (int j = 0; j < plugin.linked_dependencies.size(); j++) {
+			String dependency = plugin.linked_dependencies[j];
+			String name = dependency.get_file();
+
+			if (added_linked_dependenciy_names.find(name) != -1) {
+				continue;
+			}
+
+			added_linked_dependenciy_names.push_back(name);
+			plugin_linked_dependencies.push_back(dependency);
+		}
+
+		for (int j = 0; j < plugin.system_dependencies.size(); j++) {
+			String dependency = plugin.system_dependencies[j];
+			String name = dependency.get_file();
+
+			if (added_linked_dependenciy_names.find(name) != -1) {
+				continue;
+			}
+
+			added_linked_dependenciy_names.push_back(name);
+			plugin_linked_dependencies.push_back(dependency);
+		}
+
+		for (int j = 0; j < plugin.embedded_dependencies.size(); j++) {
+			String dependency = plugin.embedded_dependencies[j];
+			String name = dependency.get_file();
+
+			if (added_embedded_dependenciy_names.find(name) != -1) {
+				continue;
+			}
+
+			added_embedded_dependenciy_names.push_back(name);
+			plugin_embedded_dependencies.push_back(dependency);
+		}
+
+		plugin_files.append_array(plugin.files_to_copy);
+
+		// Capabilities
+		// Also checking for duplicates.
+		for (int j = 0; j < plugin.capabilities.size(); j++) {
+			String capability = plugin.capabilities[j];
+
+			if (p_config_data.capabilities.find(capability) != -1) {
+				continue;
+			}
+
+			p_config_data.capabilities.push_back(capability);
+		}
+
+		// Linker flags
+		// Checking duplicates
+		for (int j = 0; j < plugin.linker_flags.size(); j++) {
+			String linker_flag = plugin.linker_flags[j];
+			plugin_linker_flags.insert(linker_flag);
+		}
+
+		// Plist
+		// Using hash map container to remove duplicates
+		const String *K = nullptr;
+
+		while ((K = plugin.plist.next(K))) {
+			String key = *K;
+			String value = plugin.plist[key];
+
+			if (key.empty() || value.empty()) {
+				continue;
+			}
+
+			plist_values[key] = value;
+		}
+
+		// CPP Code
+		String definition_comment = "// Plugin: " + plugin.name + "\n";
+		String initialization_method = plugin.initialization_method + "();\n";
+		String deinitialization_method = plugin.deinitialization_method + "();\n";
+
+		plugin_definition_cpp_code += definition_comment +
+									  "extern void " + initialization_method +
+									  "extern void " + deinitialization_method + "\n";
+
+		plugin_initialization_cpp_code += "\t" + initialization_method;
+		plugin_deinitialization_cpp_code += "\t" + deinitialization_method;
 	}
+
+	// Updating `Info.plist`
+	{
+		const String *K = nullptr;
+		while ((K = plist_values.next(K))) {
+			String key = *K;
+			String value = plist_values[key];
+
+			if (key.empty() || value.empty()) {
+				continue;
+			}
+
+			p_config_data.plist_content += "<key>" + key + "</key><string>" + value + "</string>\n";
+		}
+	}
+
+	// Export files
+	{
+		// Export linked plugin dependency
+		err = _export_additional_assets(dest_dir, plugin_linked_dependencies, true, false, r_exported_assets);
+		ERR_FAIL_COND_V(err, err);
+
+		// Export embedded plugin dependency
+		err = _export_additional_assets(dest_dir, plugin_embedded_dependencies, true, true, r_exported_assets);
+		ERR_FAIL_COND_V(err, err);
+
+		// Export plugin files
+		err = _export_additional_assets(dest_dir, plugin_files, false, false, r_exported_assets);
+		ERR_FAIL_COND_V(err, err);
+	}
+
+	// Update CPP
+	{
+		Dictionary plugin_format;
+		plugin_format["definition"] = plugin_definition_cpp_code;
+		plugin_format["initialization"] = plugin_initialization_cpp_code;
+		plugin_format["deinitialization"] = plugin_deinitialization_cpp_code;
+
+		String plugin_cpp_code = "\n// Godot Plugins\n"
+								 "void godot_ios_plugins_initialize();\n"
+								 "void godot_ios_plugins_deinitialize();\n"
+								 "// Exported Plugins\n\n"
+								 "$definition"
+								 "// Use Plugins\n"
+								 "void godot_ios_plugins_initialize() {\n"
+								 "$initialization"
+								 "}\n\n"
+								 "void godot_ios_plugins_deinitialize() {\n"
+								 "$deinitialization"
+								 "}\n";
+
+		p_config_data.cpp_code += plugin_cpp_code.format(plugin_format, "$_");
+	}
+
+	// Update Linker Flag Values
+	{
+		String result_linker_flags = " ";
+		for (Set<String>::Element *E = plugin_linker_flags.front(); E; E = E->next()) {
+			const String &flag = E->get();
+
+			if (flag.length() == 0) {
+				continue;
+			}
+
+			if (result_linker_flags.length() > 0) {
+				result_linker_flags += ' ';
+			}
+
+			result_linker_flags += flag;
+		}
+		result_linker_flags = result_linker_flags.replace("\"", "\\\"");
+		p_config_data.linker_flags += result_linker_flags;
+	}
+
+	return OK;
 }
 
 Error EditorExportPlatformIOS::export_project(const Ref<EditorExportPreset> &p_preset, bool p_debug, const String &p_path, int p_flags) {
@@ -932,6 +1493,8 @@ Error EditorExportPlatformIOS::export_project(const Ref<EditorExportPreset> &p_p
 	files_to_parse.insert("godot_ios/dummy.cpp");
 	files_to_parse.insert("godot_ios.xcodeproj/project.xcworkspace/contents.xcworkspacedata");
 	files_to_parse.insert("godot_ios.xcodeproj/xcshareddata/xcschemes/godot_ios.xcscheme");
+	files_to_parse.insert("godot_ios/godot_ios.entitlements");
+	files_to_parse.insert("godot_ios/Launch Screen.storyboard");
 
 	IOSConfigData config_data = {
 		pkg_name,
@@ -943,8 +1506,11 @@ Error EditorExportPlatformIOS::export_project(const Ref<EditorExportPreset> &p_p
 		"",
 		"",
 		"",
-		""
+		"",
+		Vector<String>()
 	};
+
+	Vector<IOSExportAsset> assets;
 
 	DirAccess *tmp_app_path = DirAccess::create_for_path(dest_dir);
 	ERR_FAIL_COND_V(!tmp_app_path, ERR_CANT_CREATE);
@@ -958,8 +1524,8 @@ Error EditorExportPlatformIOS::export_project(const Ref<EditorExportPreset> &p_p
 		return ERR_CANT_OPEN;
 	}
 
-	add_module_code(p_preset, config_data, "arkit", "F9B95E6E2391205500AF0000", "F9C95E812391205C00BF0000");
-	add_module_code(p_preset, config_data, "camera", "F9B95E6E2391205500AF0001", "F9C95E812391205C00BF0001");
+	err = _export_ios_plugins(p_preset, config_data, dest_dir + binary_name, assets, p_debug);
+	ERR_FAIL_COND_V(err, err);
 
 	//export rest of the files
 	int ret = unzGoToFirstFile(src_pkg_zip);
@@ -1001,21 +1567,8 @@ Error EditorExportPlatformIOS::export_project(const Ref<EditorExportPreset> &p_p
 			is_execute = true;
 #endif
 			file = "godot_ios.a";
-		} else if (file.begins_with("libgodot_arkit")) {
-			if ((bool)p_preset->get("capabilities/arkit") && file.ends_with(String(p_debug ? "debug" : "release") + ".fat.a")) {
-				file = "libgodot_arkit_module.a";
-			} else {
-				ret = unzGoToNextFile(src_pkg_zip);
-				continue; //ignore!
-			}
-		} else if (file.begins_with("libgodot_camera")) {
-			if ((bool)p_preset->get("capabilities/camera") && file.ends_with(String(p_debug ? "debug" : "release") + ".fat.a")) {
-				file = "libgodot_camera_module.a";
-			} else {
-				ret = unzGoToNextFile(src_pkg_zip);
-				continue; //ignore!
-			}
 		}
+
 		if (file == project_file) {
 			project_file_data = data;
 		}
@@ -1105,12 +1658,48 @@ Error EditorExportPlatformIOS::export_project(const Ref<EditorExportPreset> &p_p
 	if (err)
 		return err;
 
-	err = _export_loading_screens(p_preset, dest_dir + binary_name + "/Images.xcassets/LaunchImage.launchimage/");
-	if (err)
+	bool use_storyboard = p_preset->get("storyboard/use_launch_screen_storyboard");
+
+	String launch_image_path = dest_dir + binary_name + "/Images.xcassets/LaunchImage.launchimage/";
+	String splash_image_path = dest_dir + binary_name + "/Images.xcassets/SplashImage.imageset/";
+
+	DirAccess *launch_screen_da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+
+	if (!launch_screen_da) {
+		return ERR_CANT_CREATE;
+	}
+
+	if (use_storyboard) {
+		print_line("Using Launch Storyboard");
+
+		if (launch_screen_da->change_dir(launch_image_path) == OK) {
+			launch_screen_da->erase_contents_recursive();
+			launch_screen_da->remove(launch_image_path);
+		}
+
+		err = _export_loading_screen_file(p_preset, splash_image_path);
+	} else {
+		print_line("Using Launch Images");
+
+		const String launch_screen_path = dest_dir + binary_name + "/Launch Screen.storyboard";
+
+		launch_screen_da->remove(launch_screen_path);
+
+		if (launch_screen_da->change_dir(splash_image_path) == OK) {
+			launch_screen_da->erase_contents_recursive();
+			launch_screen_da->remove(splash_image_path);
+		}
+
+		err = _export_loading_screen_images(p_preset, launch_image_path);
+	}
+
+	memdelete(launch_screen_da);
+
+	if (err) {
 		return err;
+	}
 
 	print_line("Exporting additional assets");
-	Vector<IOSExportAsset> assets;
 	_export_additional_assets(dest_dir + binary_name, libraries, assets);
 	_add_assets_to_project(p_preset, project_file_data, assets);
 	String project_file_name = dest_dir + binary_name + ".xcodeproj/project.pbxproj";
@@ -1229,7 +1818,7 @@ bool EditorExportPlatformIOS::can_export(const Ref<EditorExportPreset> &p_preset
 		}
 	}
 
-	String etc_error = test_etc2();
+	String etc_error = test_etc2_or_pvrtc();
 	if (etc_error != String()) {
 		valid = false;
 		err += etc_error;
@@ -1246,9 +1835,19 @@ EditorExportPlatformIOS::EditorExportPlatformIOS() {
 	Ref<Image> img = memnew(Image(_iphone_logo));
 	logo.instance();
 	logo->create_from_image(img);
+
+	plugins_changed = true;
+	quit_request = false;
+	plugins_lock = Mutex::create();
+
+	check_for_changes_thread = Thread::create(_check_for_changes_poll_thread, this);
 }
 
 EditorExportPlatformIOS::~EditorExportPlatformIOS() {
+	quit_request = true;
+	Thread::wait_to_finish(check_for_changes_thread);
+	memdelete(plugins_lock);
+	memdelete(check_for_changes_thread);
 }
 
 void register_iphone_exporter() {

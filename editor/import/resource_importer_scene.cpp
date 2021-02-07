@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -931,9 +931,6 @@ static String _make_extname(const String &p_str) {
 
 void ResourceImporterScene::_find_meshes(Node *p_node, Map<Ref<ArrayMesh>, Transform> &meshes) {
 
-	List<PropertyInfo> pi;
-	p_node->get_property_list(&pi);
-
 	MeshInstance *mi = Object::cast_to<MeshInstance>(p_node);
 
 	if (mi) {
@@ -941,11 +938,11 @@ void ResourceImporterScene::_find_meshes(Node *p_node, Map<Ref<ArrayMesh>, Trans
 		Ref<ArrayMesh> mesh = mi->get_mesh();
 
 		if (mesh.is_valid() && !meshes.has(mesh)) {
-			Spatial *s = mi;
+			Spatial *s = Object::cast_to<Spatial>(mi);
 			Transform transform;
 			while (s) {
 				transform = transform * s->get_transform();
-				s = s->get_parent_spatial();
+				s = Object::cast_to<Spatial>(s->get_parent());
 			}
 
 			meshes[mesh] = transform;
@@ -973,8 +970,7 @@ void ResourceImporterScene::_make_external_resources(Node *p_node, const String 
 				ERR_CONTINUE(anim.is_null());
 
 				if (!p_animations.has(anim)) {
-
-					//mark what comes from the file first, this helps eventually keep user data
+					// Tracks from source file should be set as imported, anything else is a custom track.
 					for (int i = 0; i < anim->get_track_count(); i++) {
 						anim->track_set_imported(i, true);
 					}
@@ -988,10 +984,9 @@ void ResourceImporterScene::_make_external_resources(Node *p_node, const String 
 					}
 
 					if (FileAccess::exists(ext_name) && p_keep_animations) {
-						//try to keep custom animation tracks
+						// Copy custom animation tracks from previously imported files.
 						Ref<Animation> old_anim = ResourceLoader::load(ext_name, "Animation", true);
 						if (old_anim.is_valid()) {
-							//meergeee
 							for (int i = 0; i < old_anim->get_track_count(); i++) {
 								if (!old_anim->track_is_imported(i)) {
 									old_anim->copy_track(i, anim);
@@ -1001,7 +996,7 @@ void ResourceImporterScene::_make_external_resources(Node *p_node, const String 
 						}
 					}
 
-					anim->set_path(ext_name, true); //if not set, then its never saved externally
+					anim->set_path(ext_name, true); // Set path to save externally.
 					ResourceSaver::save(ext_name, anim, ResourceSaver::FLAG_CHANGE_PATH);
 					p_animations[anim] = anim;
 				}
@@ -1429,29 +1424,117 @@ Error ResourceImporterScene::import(const String &p_source_file, const String &p
 		Map<Ref<ArrayMesh>, Transform> meshes;
 		_find_meshes(scene, meshes);
 
-		if (light_bake_mode == 2) {
+		String file_id = src_path.get_file();
+		String cache_file_path = base_path.plus_file(file_id + ".unwrap_cache");
 
-			float texel_size = p_options["meshes/lightmap_texel_size"];
-			texel_size = MAX(0.001, texel_size);
+		int *cache_data = nullptr;
+		unsigned int cache_size = 0;
 
-			EditorProgress progress2("gen_lightmaps", TTR("Generating Lightmaps"), meshes.size());
-			int step = 0;
-			for (Map<Ref<ArrayMesh>, Transform>::Element *E = meshes.front(); E; E = E->next()) {
+		if (FileAccess::exists(cache_file_path)) {
+			Error err2;
+			FileAccess *file = FileAccess::open(cache_file_path, FileAccess::READ, &err2);
 
-				Ref<ArrayMesh> mesh = E->key();
-				String name = mesh->get_name();
-				if (name == "") { //should not happen but..
-					name = "Mesh " + itos(step);
-				}
-
-				progress2.step(TTR("Generating for Mesh: ") + name + " (" + itos(step) + "/" + itos(meshes.size()) + ")", step);
-
-				Error err2 = mesh->lightmap_unwrap(E->get(), texel_size);
-				if (err2 != OK) {
-					EditorNode::add_io_error("Mesh '" + name + "' failed lightmap generation. Please fix geometry.");
-				}
-				step++;
+			if (!err2) {
+				cache_size = file->get_len();
+				cache_data = (int *)memalloc(cache_size);
+				file->get_buffer((unsigned char *)cache_data, cache_size);
 			}
+
+			if (file)
+				memdelete(file);
+		}
+
+		float texel_size = p_options["meshes/lightmap_texel_size"];
+		texel_size = MAX(0.001, texel_size);
+
+		Map<String, unsigned int> used_meshes;
+
+		EditorProgress progress2("gen_lightmaps", TTR("Generating Lightmaps"), meshes.size());
+		int step = 0;
+		for (Map<Ref<ArrayMesh>, Transform>::Element *E = meshes.front(); E; E = E->next()) {
+
+			Ref<ArrayMesh> mesh = E->key();
+			String name = mesh->get_name();
+			if (name == "") { //should not happen but..
+				name = "Mesh " + itos(step);
+			}
+
+			progress2.step(TTR("Generating for Mesh: ") + name + " (" + itos(step) + "/" + itos(meshes.size()) + ")", step);
+
+			int *ret_cache_data = cache_data;
+			unsigned int ret_cache_size = cache_size;
+			bool ret_used_cache = true; // Tell the unwrapper to use the cache
+			Error err2 = mesh->lightmap_unwrap_cached(ret_cache_data, ret_cache_size, ret_used_cache, E->get(), texel_size);
+
+			if (err2 != OK) {
+				EditorNode::add_io_error("Mesh '" + name + "' failed lightmap generation. Please fix geometry.");
+			} else {
+
+				String hash = String::md5((unsigned char *)ret_cache_data);
+				used_meshes.insert(hash, ret_cache_size);
+
+				if (!ret_used_cache) {
+					// Cache was not used, add the generated entry to the current cache
+
+					unsigned int new_cache_size = cache_size + ret_cache_size + (cache_size == 0 ? 4 : 0);
+					int *new_cache_data = (int *)memalloc(new_cache_size);
+
+					if (cache_size == 0) {
+						// Cache was empty
+						new_cache_data[0] = 0;
+						cache_size = 4;
+					} else {
+						memcpy(new_cache_data, cache_data, cache_size);
+						memfree(cache_data);
+					}
+
+					memcpy(&new_cache_data[cache_size / sizeof(int)], ret_cache_data, ret_cache_size);
+
+					cache_data = new_cache_data;
+					cache_size = new_cache_size;
+
+					cache_data[0]++; // Increase entry count
+				}
+			}
+			step++;
+		}
+
+		Error err2;
+		FileAccess *file = FileAccess::open(cache_file_path, FileAccess::WRITE, &err2);
+
+		if (err2) {
+			if (file)
+				memdelete(file);
+		} else {
+
+			// Store number of entries
+			file->store_32(used_meshes.size());
+
+			// Store cache entries
+			unsigned int r_idx = 1;
+			for (int i = 0; i < cache_data[0]; ++i) {
+				unsigned char *entry_start = (unsigned char *)&cache_data[r_idx];
+				String entry_hash = String::md5(entry_start);
+				if (used_meshes.has(entry_hash)) {
+					unsigned int entry_size = used_meshes[entry_hash];
+					file->store_buffer(entry_start, entry_size);
+				}
+
+				r_idx += 4; // hash
+				r_idx += 2; // size hint
+
+				int vertex_count = cache_data[r_idx];
+				r_idx += 1; // vertex count
+				r_idx += vertex_count; // vertex
+				r_idx += vertex_count * 2; // uvs
+
+				int index_count = cache_data[r_idx];
+				r_idx += 1; // index count
+				r_idx += index_count; // indices
+			}
+
+			file->close();
+			memfree(cache_data);
 		}
 	}
 
