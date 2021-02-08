@@ -107,8 +107,8 @@ def configure(env):
     env.Append(CCFLAGS=['-pipe'])
     env.Append(LINKFLAGS=['-pipe'])
 
-    env["CC"] = "gcc-x86"
-    env["CXX"] = "g++-x86"
+    env["CC"] = "gcc"
+    env["CXX"] = "g++"
 
     ## Dependencies
 
