@@ -55,7 +55,7 @@ custom_tools = ["default"]
 
 platform_arg = ARGUMENTS.get("platform", ARGUMENTS.get("p", False))
 
-if os.name == "nt" and (platform_arg == "android" or ARGUMENTS.get("use_mingw", False)):
+if os.name == "nt" and (platform_arg == "android" or methods.get_cmdline_bool("use_mingw", False)):
     custom_tools = ["mingw"]
 elif platform_arg == "javascript":
     # Use generic POSIX build toolchain for Emscripten.
@@ -95,7 +95,7 @@ env_base.SConsignFile(".sconsign{0}.dblite".format(pickle.HIGHEST_PROTOCOL))
 
 customs = ["custom.py"]
 
-profile = ARGUMENTS.get("profile", False)
+profile = ARGUMENTS.get("profile", "")
 if profile:
     if os.path.isfile(profile):
         customs.append(profile)
@@ -121,6 +121,7 @@ opts.Add(BoolVariable("gdscript", "Enable GDScript support", True))
 opts.Add(BoolVariable("minizip", "Enable ZIP archive support using minizip", True))
 opts.Add(BoolVariable("xaudio2", "Enable the XAudio2 audio driver", False))
 opts.Add("custom_modules", "A list of comma-separated directory paths containing custom modules to build.", "")
+opts.Add(BoolVariable("custom_modules_recursive", "Detect custom modules recursively for each specified path.", True))
 
 # Advanced options
 opts.Add(BoolVariable("dev", "If yes, alias for verbose=yes warnings=extra werror=yes", False))
@@ -240,8 +241,14 @@ if env_base["custom_modules"]:
             sys.exit(255)
 
 for path in module_search_paths:
+    if path == "modules":
+        # Built-in modules don't have nested modules,
+        # so save the time it takes to parse directories.
+        modules = methods.detect_modules(path, recursive=False)
+    else:  # External.
+        modules = methods.detect_modules(path, env_base["custom_modules_recursive"])
     # Note: custom modules can override built-in ones.
-    modules_detected.update(methods.detect_modules(path))
+    modules_detected.update(modules)
     include_path = os.path.dirname(path)
     if include_path:
         env_base.Prepend(CPPPATH=[include_path])
@@ -317,15 +324,16 @@ if selected_platform in platform_list:
         env.Alias("compiledb", env.CompilationDatabase())
 
     # 'dev' and 'production' are aliases to set default options if they haven't been set
-    # manually by the user. We use `ARGUMENTS.get()` to check if they were manually set.
+    # manually by the user.
     if env["dev"]:
-        env["verbose"] = ARGUMENTS.get("verbose", True)
+        env["verbose"] = methods.get_cmdline_bool("verbose", True)
         env["warnings"] = ARGUMENTS.get("warnings", "extra")
-        env["werror"] = ARGUMENTS.get("werror", True)
+        env["werror"] = methods.get_cmdline_bool("werror", True)
     if env["production"]:
-        env["use_static_cpp"] = ARGUMENTS.get("use_static_cpp", True)
-        env["use_lto"] = ARGUMENTS.get("use_lto", True)
-        env["debug_symbols"] = ARGUMENTS.get("debug_symbols", False)
+        env["use_static_cpp"] = methods.get_cmdline_bool("use_static_cpp", True)
+        env["use_lto"] = methods.get_cmdline_bool("use_lto", True)
+        print("use_lto is: " + str(env["use_lto"]))
+        env["debug_symbols"] = methods.get_cmdline_bool("debug_symbols", False)
         if not env["tools"] and env["target"] == "debug":
             print(
                 "WARNING: Requested `production` build with `tools=no target=debug`, "
@@ -571,7 +579,7 @@ if selected_platform in platform_list:
     if env["minizip"]:
         env.Append(CPPDEFINES=["MINIZIP_ENABLED"])
 
-    editor_module_list = ["regex"]
+    editor_module_list = ["freetype", "regex"]
     for x in editor_module_list:
         if not env["module_" + x + "_enabled"]:
             if env["tools"]:
