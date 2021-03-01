@@ -6,7 +6,9 @@ from collections import OrderedDict
 from compat import iteritems, isbasestring, open_utf8, decode_utf8, qualname
 
 from SCons import Node
+from SCons.Script import ARGUMENTS
 from SCons.Script import Glob
+from SCons.Variables.BoolVariable import _text2bool
 
 
 def add_source_files(self, sources, files, warn_duplicates=True):
@@ -134,6 +136,17 @@ def parse_cg_file(fname, uniforms, sizes, conditionals):
     fs.close()
 
 
+def get_cmdline_bool(option, default):
+    """We use `ARGUMENTS.get()` to check if options were manually overridden on the command line,
+    and SCons' _text2bool helper to convert them to booleans, otherwise they're handled as strings.
+    """
+    cmdline_val = ARGUMENTS.get(option)
+    if cmdline_val is not None:
+        return _text2bool(cmdline_val)
+    else:
+        return default
+
+
 def detect_modules(search_path, recursive=False):
     """Detects and collects a list of C++ modules at specified path
 
@@ -163,9 +176,7 @@ def detect_modules(search_path, recursive=False):
         version_path = os.path.join(path, "version.py")
         if os.path.exists(version_path):
             with open(version_path) as f:
-                version = {}
-                exec(f.read(), version)
-                if version.get("short_name") == "godot":
+                if 'short_name = "godot"' in f.read():
                     return True
         return False
 
