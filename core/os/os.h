@@ -40,6 +40,7 @@
 #include "core/templates/vector.h"
 
 #include <stdarg.h>
+#include <stdlib.h>
 
 class OS {
 	static OS *singleton;
@@ -53,7 +54,7 @@ class OS {
 	bool _debug_stdout = false;
 	String _local_clipboard;
 	bool _no_window = false;
-	int _exit_code = 0;
+	int _exit_code = EXIT_FAILURE; // unexpected exit is marked as failure
 	int _orientation;
 	bool _allow_hidpi = false;
 	bool _allow_layered = false;
@@ -148,11 +149,6 @@ public:
 
 	bool is_layered_allowed() const { return _allow_layered; }
 	bool is_hidpi_allowed() const { return _allow_hidpi; }
-
-	virtual int get_tablet_driver_count() const { return 0; };
-	virtual String get_tablet_driver_name(int p_driver) const { return ""; };
-	virtual String get_current_tablet_driver() const { return ""; };
-	virtual void set_current_tablet_driver(const String &p_driver){};
 
 	void ensure_user_data_dir();
 

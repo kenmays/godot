@@ -60,7 +60,7 @@ void CPUParticles2D::set_amount(int p_amount) {
 	}
 
 	particle_data.resize((8 + 4 + 4) * p_amount);
-	RS::get_singleton()->multimesh_allocate(multimesh, p_amount, RS::MULTIMESH_TRANSFORM_2D, true, true);
+	RS::get_singleton()->multimesh_allocate_data(multimesh, p_amount, RS::MULTIMESH_TRANSFORM_2D, true, true);
 
 	particle_order.resize(p_amount);
 }
@@ -410,7 +410,7 @@ bool CPUParticles2D::get_particle_flag(ParticleFlags p_particle_flag) const {
 void CPUParticles2D::set_emission_shape(EmissionShape p_shape) {
 	ERR_FAIL_INDEX(p_shape, EMISSION_SHAPE_MAX);
 	emission_shape = p_shape;
-	_change_notify();
+	notify_property_list_changed();
 }
 
 void CPUParticles2D::set_emission_sphere_radius(float p_radius) {
@@ -599,7 +599,7 @@ void CPUParticles2D::_particles_process(float p_delta) {
 		cycle++;
 		if (one_shot && cycle > 0) {
 			set_emitting(false);
-			_change_notify();
+			notify_property_list_changed();
 		}
 	}
 
@@ -1032,66 +1032,64 @@ void CPUParticles2D::_update_render_thread() {
 }
 
 void CPUParticles2D::_notification(int p_what) {
-	if (p_what == NOTIFICATION_ENTER_TREE) {
-		set_process_internal(emitting);
-	}
-
-	if (p_what == NOTIFICATION_EXIT_TREE) {
-		_set_redraw(false);
-	}
-
-	if (p_what == NOTIFICATION_DRAW) {
-		// first update before rendering to avoid one frame delay after emitting starts
-		if (emitting && (time == 0)) {
-			_update_internal();
-		}
-
-		if (!redraw) {
-			return; // don't add to render list
-		}
-
-		RID texrid;
-		if (texture.is_valid()) {
-			texrid = texture->get_rid();
-		}
-
-		RS::get_singleton()->canvas_item_add_multimesh(get_canvas_item(), multimesh, texrid);
-	}
-
-	if (p_what == NOTIFICATION_INTERNAL_PROCESS) {
-		_update_internal();
-	}
-
-	if (p_what == NOTIFICATION_TRANSFORM_CHANGED) {
-		inv_emission_transform = get_global_transform().affine_inverse();
-
-		if (!local_coords) {
-			int pc = particles.size();
-
-			float *w = particle_data.ptrw();
-			const Particle *r = particles.ptr();
-			float *ptr = w;
-
-			for (int i = 0; i < pc; i++) {
-				Transform2D t = inv_emission_transform * r[i].transform;
-
-				if (r[i].active) {
-					ptr[0] = t.elements[0][0];
-					ptr[1] = t.elements[1][0];
-					ptr[2] = 0;
-					ptr[3] = t.elements[2][0];
-					ptr[4] = t.elements[0][1];
-					ptr[5] = t.elements[1][1];
-					ptr[6] = 0;
-					ptr[7] = t.elements[2][1];
-
-				} else {
-					zeromem(ptr, sizeof(float) * 8);
-				}
-
-				ptr += 16;
+	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+			set_process_internal(emitting);
+		} break;
+		case NOTIFICATION_EXIT_TREE: {
+			_set_redraw(false);
+		} break;
+		case NOTIFICATION_DRAW: {
+			// first update before rendering to avoid one frame delay after emitting starts
+			if (emitting && (time == 0)) {
+				_update_internal();
 			}
-		}
+
+			if (!redraw) {
+				return; // don't add to render list
+			}
+
+			RID texrid;
+			if (texture.is_valid()) {
+				texrid = texture->get_rid();
+			}
+
+			RS::get_singleton()->canvas_item_add_multimesh(get_canvas_item(), multimesh, texrid);
+		} break;
+		case NOTIFICATION_INTERNAL_PROCESS: {
+			_update_internal();
+		} break;
+		case NOTIFICATION_TRANSFORM_CHANGED: {
+			inv_emission_transform = get_global_transform().affine_inverse();
+
+			if (!local_coords) {
+				int pc = particles.size();
+
+				float *w = particle_data.ptrw();
+				const Particle *r = particles.ptr();
+				float *ptr = w;
+
+				for (int i = 0; i < pc; i++) {
+					Transform2D t = inv_emission_transform * r[i].transform;
+
+					if (r[i].active) {
+						ptr[0] = t.elements[0][0];
+						ptr[1] = t.elements[1][0];
+						ptr[2] = 0;
+						ptr[3] = t.elements[2][0];
+						ptr[4] = t.elements[0][1];
+						ptr[5] = t.elements[1][1];
+						ptr[6] = 0;
+						ptr[7] = t.elements[2][1];
+
+					} else {
+						zeromem(ptr, sizeof(float) * 8);
+					}
+
+					ptr += 16;
+				}
+			}
+		} break;
 	}
 }
 

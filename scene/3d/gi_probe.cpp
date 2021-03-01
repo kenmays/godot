@@ -91,7 +91,7 @@ Dictionary GIProbeData::_get_data() const {
 }
 
 void GIProbeData::allocate(const Transform &p_to_cell_xform, const AABB &p_aabb, const Vector3 &p_octree_size, const Vector<uint8_t> &p_octree_cells, const Vector<uint8_t> &p_data_cells, const Vector<uint8_t> &p_distance_field, const Vector<int> &p_level_counts) {
-	RS::get_singleton()->gi_probe_allocate(probe, p_to_cell_xform, p_aabb, p_octree_size, p_octree_cells, p_data_cells, p_distance_field, p_level_counts);
+	RS::get_singleton()->gi_probe_allocate_data(probe, p_to_cell_xform, p_aabb, p_octree_size, p_octree_cells, p_data_cells, p_distance_field, p_level_counts);
 	bounds = p_aabb;
 	to_cell_xform = p_to_cell_xform;
 	octree_size = p_octree_size;
@@ -221,7 +221,7 @@ RID GIProbeData::get_rid() const {
 
 void GIProbeData::_validate_property(PropertyInfo &property) const {
 	if (property.name == "anisotropy_strength") {
-		bool anisotropy_enabled = ProjectSettings::get_singleton()->get("rendering/quality/gi_probes/anisotropic");
+		bool anisotropy_enabled = ProjectSettings::get_singleton()->get("rendering/global_illumination/gi_probes/anisotropic");
 		if (!anisotropy_enabled) {
 			property.usage = PROPERTY_USAGE_NOEDITOR;
 		}
@@ -323,7 +323,6 @@ GIProbe::Subdiv GIProbe::get_subdiv() const {
 void GIProbe::set_extents(const Vector3 &p_extents) {
 	extents = p_extents;
 	update_gizmo();
-	_change_notify("extents");
 }
 
 Vector3 GIProbe::get_extents() const {
@@ -416,13 +415,16 @@ Vector3i GIProbe::get_estimated_cell_size() const {
 void GIProbe::bake(Node *p_from_node, bool p_create_visual_debug) {
 	static const int subdiv_value[SUBDIV_MAX] = { 6, 7, 8, 9 };
 
+	p_from_node = p_from_node ? p_from_node : get_parent();
+	ERR_FAIL_NULL(p_from_node);
+
 	Voxelizer baker;
 
 	baker.begin_bake(subdiv_value[subdiv], AABB(-extents, extents * 2.0));
 
 	List<PlotMesh> mesh_list;
 
-	_find_meshes(p_from_node ? p_from_node : get_parent(), mesh_list);
+	_find_meshes(p_from_node, mesh_list);
 
 	if (bake_begin_function) {
 		bake_begin_function(mesh_list.size() + 1);
@@ -486,7 +488,7 @@ void GIProbe::bake(Node *p_from_node, bool p_create_visual_debug) {
 		bake_end_function();
 	}
 
-	_change_notify(); //bake property may have changed
+	notify_property_list_changed(); //bake property may have changed
 }
 
 void GIProbe::_debug_bake() {

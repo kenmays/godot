@@ -669,10 +669,7 @@ void EditorFileSystem::_scan_new_dir(EditorFileSystemDirectory *p_dir, DirAccess
 				continue;
 			}
 
-			if (FileAccess::exists(cd.plus_file(f).plus_file("project.godot"))) { // skip if another project inside this
-				continue;
-			}
-			if (FileAccess::exists(cd.plus_file(f).plus_file(".gdignore"))) { // skip if another project inside this
+			if (_should_skip_directory(cd.plus_file(f))) {
 				continue;
 			}
 
@@ -874,10 +871,7 @@ void EditorFileSystem::_scan_fs_changes(EditorFileSystemDirectory *p_dir, const 
 
 				int idx = p_dir->find_dir_index(f);
 				if (idx == -1) {
-					if (FileAccess::exists(cd.plus_file(f).plus_file("project.godot"))) { // skip if another project inside this
-						continue;
-					}
-					if (FileAccess::exists(cd.plus_file(f).plus_file(".gdignore"))) { // skip if another project inside this
+					if (_should_skip_directory(cd.plus_file(f))) {
 						continue;
 					}
 
@@ -1413,11 +1407,11 @@ void EditorFileSystem::_scan_script_classes(EditorFileSystemDirectory *p_dir) {
 }
 
 void EditorFileSystem::update_script_classes() {
-	if (!update_script_classes_queued) {
+	if (!update_script_classes_queued.is_set()) {
 		return;
 	}
 
-	update_script_classes_queued = false;
+	update_script_classes_queued.clear();
 	ScriptServer::global_classes_clear();
 	if (get_filesystem()) {
 		_scan_script_classes(get_filesystem());
@@ -1436,11 +1430,11 @@ void EditorFileSystem::update_script_classes() {
 }
 
 void EditorFileSystem::_queue_update_script_classes() {
-	if (update_script_classes_queued) {
+	if (update_script_classes_queued.is_set()) {
 		return;
 	}
 
-	update_script_classes_queued = true;
+	update_script_classes_queued.set();
 	call_deferred("update_script_classes");
 }
 
@@ -1979,6 +1973,20 @@ Error EditorFileSystem::_resource_import(const String &p_path) {
 	return OK;
 }
 
+bool EditorFileSystem::_should_skip_directory(const String &p_path) {
+	if (FileAccess::exists(p_path.plus_file("project.godot"))) {
+		// skip if another project inside this
+		return true;
+	}
+
+	if (FileAccess::exists(p_path.plus_file(".gdignore"))) {
+		// skip if a `.gdignore` file is inside this
+		return true;
+	}
+
+	return false;
+}
+
 bool EditorFileSystem::is_group_file(const String &p_path) const {
 	return group_file_cache.has(p_path);
 }
@@ -2067,7 +2075,7 @@ void EditorFileSystem::_update_extensions() {
 
 EditorFileSystem::EditorFileSystem() {
 	ResourceLoader::import = _resource_import;
-	reimport_on_missing_imported_files = GLOBAL_DEF("editor/reimport_missing_imported_files", true);
+	reimport_on_missing_imported_files = GLOBAL_DEF("editor/import/reimport_missing_imported_files", true);
 
 	singleton = this;
 	filesystem = memnew(EditorFileSystemDirectory); //like, empty
@@ -2091,7 +2099,7 @@ EditorFileSystem::EditorFileSystem() {
 	memdelete(da);
 
 	scan_total = 0;
-	update_script_classes_queued = false;
+	update_script_classes_queued.clear();
 	first_scan = true;
 	scan_changes_pending = false;
 	revalidate_import_files = false;

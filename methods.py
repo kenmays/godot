@@ -6,9 +6,11 @@ from collections import OrderedDict
 
 # We need to define our own `Action` method to control the verbosity of output
 # and whenever we need to run those commands in a subprocess on some platforms.
-from SCons.Script import Action
 from SCons import Node
+from SCons.Script import Action
+from SCons.Script import ARGUMENTS
 from SCons.Script import Glob
+from SCons.Variables.BoolVariable import _text2bool
 from platform_methods import run_in_subprocess
 
 
@@ -145,6 +147,17 @@ def parse_cg_file(fname, uniforms, sizes, conditionals):
     fs.close()
 
 
+def get_cmdline_bool(option, default):
+    """We use `ARGUMENTS.get()` to check if options were manually overridden on the command line,
+    and SCons' _text2bool helper to convert them to booleans, otherwise they're handled as strings.
+    """
+    cmdline_val = ARGUMENTS.get(option)
+    if cmdline_val is not None:
+        return _text2bool(cmdline_val)
+    else:
+        return default
+
+
 def detect_modules(search_path, recursive=False):
     """Detects and collects a list of C++ modules at specified path
 
@@ -174,9 +187,7 @@ def detect_modules(search_path, recursive=False):
         version_path = os.path.join(path, "version.py")
         if os.path.exists(version_path):
             with open(version_path) as f:
-                version = {}
-                exec(f.read(), version)
-                if version.get("short_name") == "godot":
+                if 'short_name = "godot"' in f.read():
                     return True
         return False
 

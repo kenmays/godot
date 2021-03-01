@@ -558,13 +558,13 @@ ShaderLanguage::Token ShaderLanguage::_get_token() {
 								return _make_token(TK_ERROR, "Invalid numeric constant");
 							}
 							hexa_found = true;
-						} else if (GETCHAR(i) == 'e') {
-							if (hexa_found || exponent_found || float_suffix_found) {
+						} else if (GETCHAR(i) == 'e' && !hexa_found) {
+							if (exponent_found || float_suffix_found) {
 								return _make_token(TK_ERROR, "Invalid numeric constant");
 							}
 							exponent_found = true;
-						} else if (GETCHAR(i) == 'f') {
-							if (hexa_found || exponent_found) {
+						} else if (GETCHAR(i) == 'f' && !hexa_found) {
+							if (exponent_found) {
 								return _make_token(TK_ERROR, "Invalid numeric constant");
 							}
 							float_suffix_found = true;
@@ -3102,6 +3102,72 @@ bool ShaderLanguage::_is_operator_assign(Operator p_op) const {
 	return false;
 }
 
+bool ShaderLanguage::_validate_varying_assign(ShaderNode::Varying &p_varying, String *r_message) {
+	if (current_function == String("light")) {
+		*r_message = RTR("Varying may not be assigned in the 'light' function.");
+		return false;
+	}
+	switch (p_varying.stage) {
+		case ShaderNode::Varying::STAGE_UNKNOWN: // first assign
+			if (current_function == String("vertex")) {
+				p_varying.stage = ShaderNode::Varying::STAGE_VERTEX;
+			} else if (current_function == String("fragment")) {
+				p_varying.stage = ShaderNode::Varying::STAGE_FRAGMENT;
+			}
+			break;
+		case ShaderNode::Varying::STAGE_VERTEX:
+			if (current_function == String("fragment")) {
+				*r_message = RTR("Varyings which assigned in 'vertex' function may not be reassigned in 'fragment' or 'light'.");
+				return false;
+			}
+			break;
+		case ShaderNode::Varying::STAGE_FRAGMENT:
+			if (current_function == String("vertex")) {
+				*r_message = RTR("Varyings which assigned in 'fragment' function may not be reassigned in 'vertex' or 'light'.");
+				return false;
+			}
+			break;
+		default:
+			break;
+	}
+	return true;
+}
+
+bool ShaderLanguage::_validate_varying_using(ShaderNode::Varying &p_varying, String *r_message) {
+	switch (p_varying.stage) {
+		case ShaderNode::Varying::STAGE_UNKNOWN:
+			*r_message = RTR("Varying must be assigned before using!");
+			return false;
+		case ShaderNode::Varying::STAGE_VERTEX:
+			if (current_function == String("fragment")) {
+				p_varying.stage = ShaderNode::Varying::STAGE_VERTEX_TO_FRAGMENT;
+			} else if (current_function == String("light")) {
+				p_varying.stage = ShaderNode::Varying::STAGE_VERTEX_TO_LIGHT;
+			}
+			break;
+		case ShaderNode::Varying::STAGE_FRAGMENT:
+			if (current_function == String("light")) {
+				p_varying.stage = ShaderNode::Varying::STAGE_FRAGMENT_TO_LIGHT;
+			}
+			break;
+		case ShaderNode::Varying::STAGE_VERTEX_TO_FRAGMENT:
+			if (current_function == String("light")) {
+				*r_message = RTR("Varying must only be used in two different stages, which can be 'vertex' 'fragment' and 'light'");
+				return false;
+			}
+			break;
+		case ShaderNode::Varying::STAGE_VERTEX_TO_LIGHT:
+			if (current_function == String("fragment")) {
+				*r_message = RTR("Varying must only be used in two different stages, which can be 'vertex' 'fragment' and 'light'");
+				return false;
+			}
+			break;
+		default:
+			break;
+	}
+	return true;
+}
+
 bool ShaderLanguage::_validate_assign(Node *p_node, const FunctionInfo &p_function_info, String *r_message) {
 	if (p_node->type == Node::TYPE_OPERATOR) {
 		OperatorNode *op = static_cast<OperatorNode *>(p_node);
@@ -3142,13 +3208,6 @@ bool ShaderLanguage::_validate_assign(Node *p_node, const FunctionInfo &p_functi
 			return false;
 		}
 
-		if (shader->varyings.has(var->name) && current_function != String("vertex")) {
-			if (r_message) {
-				*r_message = RTR("Varyings can only be assigned in vertex function.");
-			}
-			return false;
-		}
-
 		if (shader->constants.has(var->name) || var->is_const) {
 			if (r_message) {
 				*r_message = RTR("Constants cannot be modified.");
@@ -3165,13 +3224,6 @@ bool ShaderLanguage::_validate_assign(Node *p_node, const FunctionInfo &p_functi
 		if (shader->constants.has(arr->name) || arr->is_const) {
 			if (r_message) {
 				*r_message = RTR("Constants cannot be modified.");
-			}
-			return false;
-		}
-
-		if (shader->varyings.has(arr->name) && current_function != String("vertex")) {
-			if (r_message) {
-				*r_message = RTR("Varyings can only be assigned in vertex function.");
 			}
 			return false;
 		}
@@ -3761,6 +3813,23 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 						_set_error("Unknown identifier in expression: " + String(identifier));
 						return nullptr;
 					}
+					if (ident_type == IDENTIFIER_VARYING) {
+						TkPos prev_pos = _get_tkpos();
+						Token next_token = _get_token();
+						_set_tkpos(prev_pos);
+						String error;
+						if (next_token.type == TK_OP_ASSIGN) {
+							if (!_validate_varying_assign(shader->varyings[identifier], &error)) {
+								_set_error(error);
+								return nullptr;
+							}
+						} else {
+							if (!_validate_varying_using(shader->varyings[identifier], &error)) {
+								_set_error(error);
+								return nullptr;
+							}
+						}
+					}
 					last_const = is_const;
 
 					if (ident_type == IDENTIFIER_FUNCTION) {
@@ -3784,10 +3853,6 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 					if (tk.type == TK_OP_ASSIGN) {
 						if (is_const) {
 							_set_error("Constants cannot be modified.");
-							return nullptr;
-						}
-						if (shader->varyings.has(identifier) && current_function != String("vertex")) {
-							_set_error("Varyings can only be assigned in vertex function.");
 							return nullptr;
 						}
 						assign_expression = _parse_array_constructor(p_block, p_function_info, data_type, struct_name, array_size);
@@ -5796,6 +5861,8 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 				return ERR_BUG;
 			}
 
+			String return_struct_name = String(b->parent_function->return_struct_name);
+
 			ControlFlowNode *flow = alloc_node<ControlFlowNode>();
 			flow->flow_op = FLOW_OP_RETURN;
 
@@ -5804,7 +5871,7 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 			if (tk.type == TK_SEMICOLON) {
 				//all is good
 				if (b->parent_function->return_type != TYPE_VOID) {
-					_set_error("Expected return with expression of type '" + get_datatype_name(b->parent_function->return_type) + "'");
+					_set_error("Expected return with an expression of type '" + (return_struct_name != "" ? return_struct_name : get_datatype_name(b->parent_function->return_type)) + "'");
 					return ERR_PARSE_ERROR;
 				}
 			} else {
@@ -5814,8 +5881,8 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 					return ERR_PARSE_ERROR;
 				}
 
-				if (b->parent_function->return_type != expr->get_datatype()) {
-					_set_error("Expected return expression of type '" + get_datatype_name(b->parent_function->return_type) + "'");
+				if (b->parent_function->return_type != expr->get_datatype() || return_struct_name != expr->get_datatype_name()) {
+					_set_error("Expected return with an expression of type '" + (return_struct_name != "" ? return_struct_name : get_datatype_name(b->parent_function->return_type)) + "'");
 					return ERR_PARSE_ERROR;
 				}
 
@@ -5859,15 +5926,15 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 			pos = _get_tkpos();
 			tk = _get_token();
 			if (tk.type != TK_SEMICOLON) {
-				//all is good
 				_set_error("Expected ';' after discard");
+				return ERR_PARSE_ERROR;
 			}
 
 			p_block->statements.push_back(flow);
 		} else if (tk.type == TK_CF_BREAK) {
 			if (!p_can_break) {
-				//all is good
-				_set_error("Breaking is not allowed here");
+				_set_error("'break' is not allowed outside of a loop or 'switch' statement");
+				return ERR_PARSE_ERROR;
 			}
 
 			ControlFlowNode *flow = alloc_node<ControlFlowNode>();
@@ -5876,8 +5943,8 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 			pos = _get_tkpos();
 			tk = _get_token();
 			if (tk.type != TK_SEMICOLON) {
-				//all is good
 				_set_error("Expected ';' after break");
+				return ERR_PARSE_ERROR;
 			}
 
 			p_block->statements.push_back(flow);
@@ -5892,8 +5959,8 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 
 		} else if (tk.type == TK_CF_CONTINUE) {
 			if (!p_can_continue) {
-				//all is good
-				_set_error("Continuing is not allowed here");
+				_set_error("'continue' is not allowed outside of a loop");
+				return ERR_PARSE_ERROR;
 			}
 
 			ControlFlowNode *flow = alloc_node<ControlFlowNode>();
@@ -5904,6 +5971,7 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 			if (tk.type != TK_SEMICOLON) {
 				//all is good
 				_set_error("Expected ';' after continue");
+				return ERR_PARSE_ERROR;
 			}
 
 			p_block->statements.push_back(flow);
@@ -6068,6 +6136,10 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
 				tk = _get_token();
 				if (tk.type == TK_IDENTIFIER) {
 					st.name = tk.text;
+					if (shader->structs.has(st.name)) {
+						_set_error("Redefinition of '" + String(st.name) + "'");
+						return ERR_PARSE_ERROR;
+					}
 					tk = _get_token();
 					if (tk.type != TK_CURLY_BRACKET_OPEN) {
 						_set_error("Expected '{'");
@@ -6260,6 +6332,7 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
 					return ERR_PARSE_ERROR;
 				}
 
+				TkPos name_pos = _get_tkpos();
 				name = tk.text;
 
 				if (_find_identifier(nullptr, false, FunctionInfo(), name)) {
@@ -6541,11 +6614,12 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
 						_set_error("Expected ';'");
 						return ERR_PARSE_ERROR;
 					}
-				} else {
+				} else { // varying
 					ShaderNode::Varying varying;
 					varying.type = type;
 					varying.precision = precision;
 					varying.interpolation = interpolation;
+					varying.tkpos = name_pos;
 
 					tk = _get_token();
 					if (tk.type != TK_SEMICOLON && tk.type != TK_BRACKET_OPEN) {
@@ -7156,6 +7230,14 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
 		}
 
 		tk = _get_token();
+	}
+
+	for (Map<StringName, ShaderNode::Varying>::Element *E = shader->varyings.front(); E; E = E->next()) {
+		if (E->get().stage == ShaderNode::Varying::STAGE_VERTEX || E->get().stage == ShaderNode::Varying::STAGE_FRAGMENT) {
+			_set_tkpos(E->get().tkpos);
+			_set_error(RTR("Varying must only be used in two different stages, which can be 'vertex' 'fragment' and 'light'"));
+			return ERR_PARSE_ERROR;
+		}
 	}
 
 	return OK;

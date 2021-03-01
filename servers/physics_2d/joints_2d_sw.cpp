@@ -55,6 +55,14 @@
  * SOFTWARE.
  */
 
+void Joint2DSW::copy_settings_from(Joint2DSW *p_joint) {
+	set_self(p_joint->get_self());
+	set_max_force(p_joint->get_max_force());
+	set_bias(p_joint->get_bias());
+	set_max_bias(p_joint->get_max_bias());
+	disable_collisions_between_bodies(p_joint->is_disabled_collisions_between_bodies());
+}
+
 static inline real_t k_scalar(Body2DSW *a, Body2DSW *b, const Vector2 &rA, const Vector2 &rB, const Vector2 &n) {
 	real_t value = 0;
 
@@ -197,15 +205,6 @@ PinJoint2DSW::PinJoint2DSW(const Vector2 &p_pos, Body2DSW *p_body_a, Body2DSW *p
 	}
 }
 
-PinJoint2DSW::~PinJoint2DSW() {
-	if (A) {
-		A->remove_constraint(this, 0);
-	}
-	if (B) {
-		B->remove_constraint(this, 1);
-	}
-}
-
 //////////////////////////////////////////////
 //////////////////////////////////////////////
 //////////////////////////////////////////////
@@ -338,11 +337,6 @@ GrooveJoint2DSW::GrooveJoint2DSW(const Vector2 &p_a_groove1, const Vector2 &p_a_
 	B->add_constraint(this, 1);
 }
 
-GrooveJoint2DSW::~GrooveJoint2DSW() {
-	A->remove_constraint(this, 0);
-	B->remove_constraint(this, 1);
-}
-
 //////////////////////////////////////////////
 //////////////////////////////////////////////
 //////////////////////////////////////////////
@@ -433,9 +427,4 @@ DampedSpringJoint2DSW::DampedSpringJoint2DSW(const Vector2 &p_anchor_a, const Ve
 
 	A->add_constraint(this, 0);
 	B->add_constraint(this, 1);
-}
-
-DampedSpringJoint2DSW::~DampedSpringJoint2DSW() {
-	A->remove_constraint(this, 0);
-	B->remove_constraint(this, 1);
 }

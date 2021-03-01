@@ -507,6 +507,11 @@ void EditorExportPlatform::_edit_files_with_filter(DirAccess *da, const Vector<S
 		if (dir.begins_with(".")) {
 			continue;
 		}
+
+		if (EditorFileSystem::_should_skip_directory(cur_dir + dir)) {
+			continue;
+		}
+
 		da->change_dir(dir);
 		_edit_files_with_filter(da, p_filters, r_list, exclude);
 		da->change_dir("..");
@@ -1403,9 +1408,9 @@ void EditorExport::add_export_preset(const Ref<EditorExportPreset> &p_preset, in
 }
 
 String EditorExportPlatform::test_etc2() const {
-	String driver = ProjectSettings::get_singleton()->get("rendering/quality/driver/driver_name");
-	bool etc_supported = ProjectSettings::get_singleton()->get("rendering/vram_compression/import_etc");
-	bool etc2_supported = ProjectSettings::get_singleton()->get("rendering/vram_compression/import_etc2");
+	String driver = ProjectSettings::get_singleton()->get("rendering/driver/driver_name");
+	bool etc_supported = ProjectSettings::get_singleton()->get("rendering/textures/vram_compression/import_etc");
+	bool etc2_supported = ProjectSettings::get_singleton()->get("rendering/textures/vram_compression/import_etc2");
 
 	if (driver == "GLES2" && !etc_supported) {
 		return TTR("Target platform requires 'ETC' texture compression for GLES2. Enable 'Import Etc' in Project Settings.");
@@ -1417,9 +1422,9 @@ String EditorExportPlatform::test_etc2() const {
 }
 
 String EditorExportPlatform::test_etc2_or_pvrtc() const {
-	String driver = ProjectSettings::get_singleton()->get("rendering/quality/driver/driver_name");
-	bool etc2_supported = ProjectSettings::get_singleton()->get("rendering/vram_compression/import_etc2");
-	bool pvrtc_supported = ProjectSettings::get_singleton()->get("rendering/vram_compression/import_pvrtc");
+	String driver = ProjectSettings::get_singleton()->get("rendering/driver/driver_name");
+	bool etc2_supported = ProjectSettings::get_singleton()->get("rendering/textures/vram_compression/import_etc2");
+	bool pvrtc_supported = ProjectSettings::get_singleton()->get("rendering/textures/vram_compression/import_pvrtc");
 
 	if (driver == "GLES2" && !pvrtc_supported) {
 		return TTR("Target platform requires 'PVRTC' texture compression for GLES2. Enable 'Import Pvrtc' in Project Settings.");
@@ -1902,7 +1907,7 @@ void EditorExportTextSceneToBinaryPlugin::_export_file(const String &p_path, con
 		return;
 	}
 
-	bool convert = GLOBAL_GET("editor/convert_text_resources_to_binary_on_export");
+	bool convert = GLOBAL_GET("editor/export/convert_text_resources_to_binary");
 	if (!convert) {
 		return;
 	}
@@ -1922,5 +1927,5 @@ void EditorExportTextSceneToBinaryPlugin::_export_file(const String &p_path, con
 }
 
 EditorExportTextSceneToBinaryPlugin::EditorExportTextSceneToBinaryPlugin() {
-	GLOBAL_DEF("editor/convert_text_resources_to_binary_on_export", false);
+	GLOBAL_DEF("editor/export/convert_text_resources_to_binary", false);
 }

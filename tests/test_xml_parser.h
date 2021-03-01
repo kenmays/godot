@@ -1,5 +1,5 @@
 /*************************************************************************/
-/*  input_map_editor.h                                                   */
+/*  test_xml_parser.h                                                    */
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
@@ -28,82 +28,47 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-#ifndef INPUT_MAP_EDITOR_H
-#define INPUT_MAP_EDITOR_H
+#ifndef TEST_XML_PARSER_H
+#define TEST_XML_PARSER_H
 
-#include "core/object/undo_redo.h"
-#include "editor/editor_data.h"
+#include <inttypes.h>
 
-class InputMapEditor : public Control {
-	GDCLASS(InputMapEditor, Control);
+#include "core/io/xml_parser.h"
+#include "core/string/ustring.h"
 
-	enum InputType {
-		INPUT_KEY,
-		INPUT_KEY_PHYSICAL,
-		INPUT_JOY_BUTTON,
-		INPUT_JOY_MOTION,
-		INPUT_MOUSE_BUTTON
-	};
+#include "tests/test_macros.h"
 
-	Tree *input_editor;
-	LineEdit *action_name;
-	Button *action_add;
-	Label *action_add_error;
+namespace TestXMLParser {
+TEST_CASE("[XMLParser] End-to-end") {
+	String source = "<?xml version = \"1.0\" encoding=\"UTF-8\" ?>\
+<top attr=\"attr value\">\
+  Text&lt;&#65;&#x42;&gt;\
+</top>";
+	Vector<uint8_t> buff = source.to_utf8_buffer();
 
-	InputType add_type;
-	String add_at;
-	int edit_idx;
+	XMLParser parser;
+	parser.open_buffer(buff);
 
-	PopupMenu *popup_add;
-	ConfirmationDialog *press_a_key;
-	bool press_a_key_physical;
-	Label *press_a_key_label;
-	ConfirmationDialog *device_input;
-	OptionButton *device_id;
-	OptionButton *device_index;
-	Label *device_index_label;
-	MenuButton *popup_copy_to_feature;
+	// <?xml ...?> gets parsed as NODE_UNKNOWN
+	CHECK(parser.read() == OK);
+	CHECK(parser.get_node_type() == XMLParser::NodeType::NODE_UNKNOWN);
 
-	Ref<InputEventKey> last_wait_for_key;
+	CHECK(parser.read() == OK);
+	CHECK(parser.get_node_type() == XMLParser::NodeType::NODE_ELEMENT);
+	CHECK(parser.get_node_name() == "top");
+	CHECK(parser.has_attribute("attr"));
+	CHECK(parser.get_attribute_value("attr") == "attr value");
 
-	AcceptDialog *message;
-	UndoRedo *undo_redo;
-	String inputmap_changed;
-	bool setting = false;
+	CHECK(parser.read() == OK);
+	CHECK(parser.get_node_type() == XMLParser::NodeType::NODE_TEXT);
+	CHECK(parser.get_node_data().lstrip(" \t") == "Text<AB>");
 
-	void _update_actions();
-	void _add_item(int p_item, Ref<InputEvent> p_exiting_event = Ref<InputEvent>());
-	void _edit_item(Ref<InputEvent> p_exiting_event);
+	CHECK(parser.read() == OK);
+	CHECK(parser.get_node_type() == XMLParser::NodeType::NODE_ELEMENT_END);
+	CHECK(parser.get_node_name() == "top");
 
-	void _action_check(String p_action);
-	void _action_adds(String);
-	void _action_add();
-	void _device_input_add();
+	parser.close();
+}
+} // namespace TestXMLParser
 
-	void _action_selected();
-	void _action_edited();
-	void _action_activated();
-	void _action_button_pressed(Object *p_obj, int p_column, int p_id);
-	void _wait_for_key(const Ref<InputEvent> &p_event);
-	void _press_a_key_confirm();
-	void _show_last_added(const Ref<InputEvent> &p_event, const String &p_name);
-
-	String _get_joypad_motion_event_text(const Ref<InputEventJoypadMotion> &p_event);
-
-	Variant get_drag_data_fw(const Point2 &p_point, Control *p_from);
-	bool can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) const;
-	void drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from);
-
-protected:
-	int _get_current_device();
-	void _set_current_device(int i_device);
-	String _get_device_string(int i_device);
-
-	void _notification(int p_what);
-	static void _bind_methods();
-
-public:
-	InputMapEditor();
-};
-
-#endif // INPUT_MAP_EDITOR_H
+#endif // TEST_XML_PARSER_H
