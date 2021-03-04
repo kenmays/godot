@@ -121,6 +121,10 @@ void OS_Unix::initialize_core() {
 	init_thread_posix();
 #endif
 
+#ifndef HAIKU_ENABLED
+	ThreadPosix::make_default();
+#endif
+
 	FileAccess::make_default<FileAccessUnix>(FileAccess::ACCESS_RESOURCES);
 	FileAccess::make_default<FileAccessUnix>(FileAccess::ACCESS_USERDATA);
 	FileAccess::make_default<FileAccessUnix>(FileAccess::ACCESS_FILESYSTEM);
