@@ -73,6 +73,9 @@ Dictionary Control::_edit_get_state() const {
 }
 
 void Control::_edit_set_state(const Dictionary &p_state) {
+	ERR_FAIL_COND((p_state.size() <= 0) ||
+				  !p_state.has("rotation") || !p_state.has("scale") ||
+				  !p_state.has("pivot") || !p_state.has("anchors") || !p_state.has("offsets"));
 	Dictionary state = p_state;
 
 	set_rotation(state["rotation"]);
@@ -581,7 +584,7 @@ void Control::_notification(int p_notification) {
 
 		} break;
 		case NOTIFICATION_MOVED_IN_PARENT: {
-			// some parents need to know the order of the childrens to draw (like TabContainer)
+			// some parents need to know the order of the children to draw (like TabContainer)
 			// update if necessary
 			if (data.parent) {
 				data.parent->update();
@@ -1779,7 +1782,7 @@ void Control::add_theme_icon_override(const StringName &p_name, const Ref<Textur
 		data.icon_override[p_name]->disconnect("changed", callable_mp(this, &Control::_override_changed));
 	}
 
-	// clear if "null" is passed instead of a icon
+	// clear if "null" is passed instead of an icon
 	if (p_icon.is_null()) {
 		data.icon_override.erase(p_name);
 	} else {

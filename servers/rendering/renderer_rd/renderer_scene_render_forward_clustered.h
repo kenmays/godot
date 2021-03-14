@@ -1,5 +1,5 @@
 /*************************************************************************/
-/*  renderer_scene_render_forward.h                                      */
+/*  renderer_scene_render_forward_clustered.h                            */
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
@@ -28,16 +28,16 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-#ifndef RENDERING_SERVER_SCENE_RENDER_FORWARD_H
-#define RENDERING_SERVER_SCENE_RENDER_FORWARD_H
+#ifndef RENDERING_SERVER_SCENE_RENDER_FORWARD_CLUSTERED_H
+#define RENDERING_SERVER_SCENE_RENDER_FORWARD_CLUSTERED_H
 
 #include "core/templates/paged_allocator.h"
 #include "servers/rendering/renderer_rd/pipeline_cache_rd.h"
 #include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
 #include "servers/rendering/renderer_rd/renderer_storage_rd.h"
-#include "servers/rendering/renderer_rd/shaders/scene_forward.glsl.gen.h"
+#include "servers/rendering/renderer_rd/shaders/scene_forward_clustered.glsl.gen.h"
 
-class RendererSceneRenderForward : public RendererSceneRenderRD {
+class RendererSceneRenderForwardClustered : public RendererSceneRenderRD {
 	enum {
 		SCENE_UNIFORM_SET = 0,
 		RENDER_PASS_UNIFORM_SET = 1,
@@ -79,11 +79,9 @@ class RendererSceneRenderForward : public RendererSceneRenderRD {
 	};
 
 	struct {
-		SceneForwardShaderRD scene_shader;
+		SceneForwardClusteredShaderRD scene_shader;
 		ShaderCompilerRD compiler;
 	} shader;
-
-	RendererStorageRD *storage;
 
 	/* Material */
 
@@ -186,7 +184,7 @@ class RendererSceneRenderForward : public RendererSceneRenderRD {
 
 	RendererStorageRD::ShaderData *_create_shader_func();
 	static RendererStorageRD::ShaderData *_create_shader_funcs() {
-		return static_cast<RendererSceneRenderForward *>(singleton)->_create_shader_func();
+		return static_cast<RendererSceneRenderForwardClustered *>(singleton)->_create_shader_func();
 	}
 
 	struct MaterialData : public RendererStorageRD::MaterialData {
@@ -208,7 +206,7 @@ class RendererSceneRenderForward : public RendererSceneRenderRD {
 
 	RendererStorageRD::MaterialData *_create_material_func(ShaderData *p_shader);
 	static RendererStorageRD::MaterialData *_create_material_funcs(RendererStorageRD::ShaderData *p_shader) {
-		return static_cast<RendererSceneRenderForward *>(singleton)->_create_material_func(static_cast<ShaderData *>(p_shader));
+		return static_cast<RendererSceneRenderForwardClustered *>(singleton)->_create_material_func(static_cast<ShaderData *>(p_shader));
 	}
 
 	/* Framebuffer */
@@ -490,9 +488,8 @@ class RendererSceneRenderForward : public RendererSceneRenderRD {
 
 	} scene_state;
 
-	static RendererSceneRenderForward *singleton;
+	static RendererSceneRenderForwardClustered *singleton;
 
-	double time;
 	RID default_shader;
 	RID default_material;
 	RID overdraw_material_shader;
@@ -534,7 +531,7 @@ class RendererSceneRenderForward : public RendererSceneRenderRD {
 	Map<Size2i, RID> sdfgi_framebuffer_size_cache;
 
 	struct GeometryInstanceData;
-	struct GeometryInstanceForward;
+	struct GeometryInstanceForwardClustered;
 
 	struct GeometryInstanceLightmapSH {
 		Color sh[9];
@@ -588,10 +585,10 @@ class RendererSceneRenderForward : public RendererSceneRenderRD {
 		ShaderData *shader_shadow = nullptr;
 
 		GeometryInstanceSurfaceDataCache *next = nullptr;
-		GeometryInstanceForward *owner = nullptr;
+		GeometryInstanceForwardClustered *owner = nullptr;
 	};
 
-	struct GeometryInstanceForward : public GeometryInstance {
+	struct GeometryInstanceForwardClustered : public GeometryInstance {
 		//used during rendering
 		bool mirror = false;
 		bool non_uniform_scale = false;
@@ -617,7 +614,7 @@ class RendererSceneRenderForward : public RendererSceneRenderRD {
 		RID lightmap_instance;
 		GeometryInstanceLightmapSH *lightmap_sh = nullptr;
 		GeometryInstanceSurfaceDataCache *surface_caches = nullptr;
-		SelfList<GeometryInstanceForward> dirty_list_element;
+		SelfList<GeometryInstanceForwardClustered> dirty_list_element;
 
 		struct Data {
 			//data used less often goes into regular heap
@@ -631,7 +628,7 @@ class RendererSceneRenderForward : public RendererSceneRenderRD {
 
 			bool use_dynamic_gi = false;
 			bool use_baked_light = false;
-			bool cast_double_sided_shaodows = false;
+			bool cast_double_sided_shadows = false;
 			bool mirror = false;
 			bool dirty_dependencies = false;
 
@@ -640,21 +637,21 @@ class RendererSceneRenderForward : public RendererSceneRenderRD {
 
 		Data *data = nullptr;
 
-		GeometryInstanceForward() :
+		GeometryInstanceForwardClustered() :
 				dirty_list_element(this) {}
 	};
 
 	static void _geometry_instance_dependency_changed(RendererStorage::DependencyChangedNotification p_notification, RendererStorage::DependencyTracker *p_tracker);
 	static void _geometry_instance_dependency_deleted(const RID &p_dependency, RendererStorage::DependencyTracker *p_tracker);
 
-	SelfList<GeometryInstanceForward>::List geometry_instance_dirty_list;
+	SelfList<GeometryInstanceForwardClustered>::List geometry_instance_dirty_list;
 
-	PagedAllocator<GeometryInstanceForward> geometry_instance_alloc;
+	PagedAllocator<GeometryInstanceForwardClustered> geometry_instance_alloc;
 	PagedAllocator<GeometryInstanceSurfaceDataCache> geometry_instance_surface_alloc;
 	PagedAllocator<GeometryInstanceLightmapSH> geometry_instance_lightmap_sh;
 
-	void _geometry_instance_add_surface_with_material(GeometryInstanceForward *ginstance, uint32_t p_surface, MaterialData *p_material, uint32_t p_material_id, uint32_t p_shader_id, RID p_mesh);
-	void _geometry_instance_add_surface(GeometryInstanceForward *ginstance, uint32_t p_surface, RID p_material, RID p_mesh);
+	void _geometry_instance_add_surface_with_material(GeometryInstanceForwardClustered *ginstance, uint32_t p_surface, MaterialData *p_material, uint32_t p_material_id, uint32_t p_shader_id, RID p_mesh);
+	void _geometry_instance_add_surface(GeometryInstanceForwardClustered *ginstance, uint32_t p_surface, RID p_material, RID p_mesh);
 	void _geometry_instance_mark_dirty(GeometryInstance *p_geometry_instance);
 	void _geometry_instance_update(GeometryInstance *p_geometry_instance);
 	void _update_dirty_geometry_instances();
@@ -761,11 +758,9 @@ public:
 	virtual void geometry_instance_pair_decal_instances(GeometryInstance *p_geometry_instance, const RID *p_decal_instances, uint32_t p_decal_instance_count);
 	virtual void geometry_instance_pair_gi_probe_instances(GeometryInstance *p_geometry_instance, const RID *p_gi_probe_instances, uint32_t p_gi_probe_instance_count);
 
-	virtual void set_time(double p_time, double p_step);
-
 	virtual bool free(RID p_rid);
 
-	RendererSceneRenderForward(RendererStorageRD *p_storage);
-	~RendererSceneRenderForward();
+	RendererSceneRenderForwardClustered(RendererStorageRD *p_storage);
+	~RendererSceneRenderForwardClustered();
 };
-#endif // RASTERIZER_SCENE_HIGHEND_RD_H
+#endif // !RENDERING_SERVER_SCENE_RENDER_FORWARD_CLUSTERED_H
