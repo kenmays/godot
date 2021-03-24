@@ -63,7 +63,6 @@
 #ifdef MODULE_GRIDMAP_ENABLED
 #include "modules/gridmap/grid_map.h"
 #endif // MODULE_GRIDMAP_ENABLED
-#include "modules/regex/regex.h"
 #include "scene/2d/node_2d.h"
 #include "scene/3d/bone_attachment_3d.h"
 #include "scene/3d/camera_3d.h"
@@ -505,25 +504,11 @@ String GLTFDocument::_gen_unique_animation_name(Ref<GLTFState> state, const Stri
 	return name;
 }
 
-String GLTFDocument::_sanitize_bone_name(const String &name) {
-	String p_name = name.camelcase_to_underscore(true);
-
-	RegEx pattern_nocolon(":");
-	p_name = pattern_nocolon.sub(p_name, "_", true);
-
-	RegEx pattern_noslash("/");
-	p_name = pattern_noslash.sub(p_name, "_", true);
-
-	RegEx pattern_nospace(" +");
-	p_name = pattern_nospace.sub(p_name, "_", true);
-
-	RegEx pattern_multiple("_+");
-	p_name = pattern_multiple.sub(p_name, "_", true);
-
-	RegEx pattern_padded("0+(\\d+)");
-	p_name = pattern_padded.sub(p_name, "$1", true);
-
-	return p_name;
+String GLTFDocument::_sanitize_bone_name(const String &p_name) {
+	String name = p_name;
+	name = name.replace(":", "_");
+	name = name.replace("/", "_");
+	return name;
 }
 
 String GLTFDocument::_gen_unique_bone_name(Ref<GLTFState> state, const GLTFSkeletonIndex skel_i, const String &p_name) {
@@ -5648,8 +5633,8 @@ void GLTFDocument::_import_animation(Ref<GLTFState> state, AnimationPlayer *ap, 
 			animation->track_set_path(track_idx, node_path);
 			//first determine animation length
 
-			const float increment = 1.0 / float(bake_fps);
-			float time = 0.0;
+			const double increment = 1.0 / bake_fps;
+			double time = 0.0;
 
 			Vector3 base_pos;
 			Quat base_rot;
@@ -5739,8 +5724,8 @@ void GLTFDocument::_import_animation(Ref<GLTFState> state, AnimationPlayer *ap, 
 				}
 			} else {
 				// CATMULLROMSPLINE or CUBIC_SPLINE have to be baked, apologies.
-				const float increment = 1.0 / float(bake_fps);
-				float time = 0.0;
+				const double increment = 1.0 / bake_fps;
+				double time = 0.0;
 				bool last = false;
 				while (true) {
 					_interpolate_track<float>(track.weight_tracks[i].times, track.weight_tracks[i].values, time, gltf_interp);

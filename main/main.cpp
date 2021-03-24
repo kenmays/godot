@@ -1551,8 +1551,8 @@ Error Main::setup2(Thread::ID p_main_tid_override) {
 
 	{
 		GLOBAL_DEF_RST_NOVAL("input_devices/pen_tablet/driver", "");
-		GLOBAL_DEF_RST_NOVAL("input_devices/pen_tablet/driver.windows", "");
-		ProjectSettings::get_singleton()->set_custom_property_info("input_devices/pen_tablet/driver.windows", PropertyInfo(Variant::STRING, "input_devices/pen_tablet/driver.windows", PROPERTY_HINT_ENUM, "wintab,winink"));
+		GLOBAL_DEF_RST_NOVAL("input_devices/pen_tablet/driver.Windows", "");
+		ProjectSettings::get_singleton()->set_custom_property_info("input_devices/pen_tablet/driver.Windows", PropertyInfo(Variant::STRING, "input_devices/pen_tablet/driver.Windows", PROPERTY_HINT_ENUM, "wintab,winink"));
 	}
 
 	if (tablet_driver == "") { // specified in project.godot
@@ -1662,7 +1662,13 @@ Error Main::setup2(Thread::ID p_main_tid_override) {
 			}
 		}
 
-		Color boot_bg_color = GLOBAL_DEF("application/boot_splash/bg_color", boot_splash_bg_color);
+#if defined(TOOLS_ENABLED) && !defined(NO_EDITOR_SPLASH)
+		const Color boot_bg_color =
+				GLOBAL_DEF("application/boot_splash/bg_color",
+						(editor || project_manager) ? boot_splash_editor_bg_color : boot_splash_bg_color);
+#else
+		const Color boot_bg_color = GLOBAL_DEF("application/boot_splash/bg_color", boot_splash_bg_color);
+#endif
 		if (boot_logo.is_valid()) {
 			RenderingServer::get_singleton()->set_boot_image(boot_logo, boot_bg_color, boot_logo_scale,
 					boot_logo_filter);

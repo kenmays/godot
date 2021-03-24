@@ -588,7 +588,8 @@ void RichTextLabel::_shape_line(ItemFrame *p_frame, int p_line, const Ref<Font> 
 					offset.x += table->columns[column].width + hseparation + frame->padding.size.x;
 
 					row_height = MAX(yofs, row_height);
-					if (column == col_count - 1) {
+					// Add row height after last column of the row or last cell of the table.
+					if (column == col_count - 1 || E->next() == nullptr) {
 						offset.x = 0;
 						row_height += vseparation;
 						table->total_height += row_height;
@@ -1478,7 +1479,7 @@ void RichTextLabel::_gui_input(Ref<InputEvent> p_event) {
 			return;
 		}
 
-		if (b->get_button_index() == BUTTON_LEFT) {
+		if (b->get_button_index() == MOUSE_BUTTON_LEFT) {
 			if (b->is_pressed() && !b->is_doubleclick()) {
 				scroll_updated = false;
 				ItemFrame *c_frame = nullptr;
@@ -1563,12 +1564,12 @@ void RichTextLabel::_gui_input(Ref<InputEvent> p_event) {
 			}
 		}
 
-		if (b->get_button_index() == BUTTON_WHEEL_UP) {
+		if (b->get_button_index() == MOUSE_BUTTON_WHEEL_UP) {
 			if (scroll_active) {
 				vscroll->set_value(vscroll->get_value() - vscroll->get_page() * b->get_factor() * 0.5 / 8);
 			}
 		}
-		if (b->get_button_index() == BUTTON_WHEEL_DOWN) {
+		if (b->get_button_index() == MOUSE_BUTTON_WHEEL_DOWN) {
 			if (scroll_active) {
 				vscroll->set_value(vscroll->get_value() + vscroll->get_page() * b->get_factor() * 0.5 / 8);
 			}
