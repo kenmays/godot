@@ -592,6 +592,9 @@ void EditorNode::_notification(int p_what) {
 				_editor_select(EDITOR_3D);
 			}
 
+			// Save the project after opening to mark it as last modified.
+			ProjectSettings::get_singleton()->save();
+
 			/* DO NOT LOAD SCENES HERE, WAIT FOR FILE SCANNING AND REIMPORT TO COMPLETE */
 		} break;
 
@@ -6466,8 +6469,8 @@ EditorNode::EditorNode() {
 	video_driver->connect("item_selected", callable_mp(this, &EditorNode::_video_driver_selected));
 	video_driver->add_theme_font_override("font", gui_base->get_theme_font("bold", "EditorFonts"));
 	video_driver->add_theme_font_size_override("font_size", gui_base->get_theme_font_size("bold_size", "EditorFonts"));
-	// TODO re-enable when GLES2 is ported
-	video_driver->set_disabled(true);
+	// TODO: Show again when OpenGL is ported.
+	video_driver->set_visible(false);
 	right_menu_hb->add_child(video_driver);
 
 #ifndef _MSC_VER
