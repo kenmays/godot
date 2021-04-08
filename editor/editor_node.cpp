@@ -390,6 +390,8 @@ void EditorNode::_update_title() {
 }
 
 void EditorNode::_unhandled_input(const Ref<InputEvent> &p_event) {
+	ERR_FAIL_COND(p_event.is_null());
+
 	Ref<InputEventKey> k = p_event;
 	if (k.is_valid() && k->is_pressed() && !k->is_echo()) {
 		EditorPlugin *old_editor = editor_plugin_screen;
@@ -792,17 +794,27 @@ void EditorNode::_fs_changed() {
 			}
 			preset.unref();
 		}
+
 		if (preset.is_null()) {
-			export_error = vformat(
-					"Invalid export preset name: %s. Make sure `export_presets.cfg` is present in the current directory.",
-					preset_name);
+			DirAccessRef da = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+			if (da->file_exists("res://export_presets.cfg")) {
+				export_error = vformat(
+						"Invalid export preset name: %s.\nThe following presets were detected in this project's `export_presets.cfg`:\n\n",
+						preset_name);
+				for (int i = 0; i < EditorExport::get_singleton()->get_export_preset_count(); ++i) {
+					// Write the preset name between double quotes since it needs to be written between quotes on the command line if it contains spaces.
+					export_error += vformat("        \"%s\"\n", EditorExport::get_singleton()->get_export_preset(i)->get_name());
+				}
+			} else {
+				export_error = "This project doesn't have an `export_presets.cfg` file at its root.\nCreate an export preset from the \"Project > Export\" dialog and try again.";
+			}
 		} else {
 			Ref<EditorExportPlatform> platform = preset->get_platform();
 			const String export_path = export_defer.path.is_empty() ? preset->get_export_path() : export_defer.path;
 			if (export_path.is_empty()) {
-				export_error = vformat("Export preset '%s' doesn't have a default export path, and none was specified.", preset_name);
+				export_error = vformat("Export preset \"%s\" doesn't have a default export path, and none was specified.", preset_name);
 			} else if (platform.is_null()) {
-				export_error = vformat("Export preset '%s' doesn't have a matching platform.", preset_name);
+				export_error = vformat("Export preset \"%s\" doesn't have a matching platform.", preset_name);
 			} else {
 				Error err = OK;
 				if (export_defer.pack_only) { // Only export .pck or .zip data pack.
@@ -815,7 +827,7 @@ void EditorNode::_fs_changed() {
 					String config_error;
 					bool missing_templates;
 					if (!platform->can_export(preset, config_error, missing_templates)) {
-						ERR_PRINT(vformat("Cannot export project with preset '%s' due to configuration errors:\n%s", preset_name, config_error));
+						ERR_PRINT(vformat("Cannot export project with preset \"%s\" due to configuration errors:\n%s", preset_name, config_error));
 						err = missing_templates ? ERR_FILE_NOT_FOUND : ERR_UNCONFIGURED;
 					} else {
 						err = platform->export_project(preset, export_defer.debug, export_path);
@@ -825,13 +837,13 @@ void EditorNode::_fs_changed() {
 					case OK:
 						break;
 					case ERR_FILE_NOT_FOUND:
-						export_error = vformat("Project export failed for preset '%s', the export template appears to be missing.", preset_name);
+						export_error = vformat("Project export failed for preset \"%s\". The export template appears to be missing.", preset_name);
 						break;
 					case ERR_FILE_BAD_PATH:
-						export_error = vformat("Project export failed for preset '%s', the target path '%s' appears to be invalid.", preset_name, export_path);
+						export_error = vformat("Project export failed for preset \"%s\". The target path \"%s\" appears to be invalid.", preset_name, export_path);
 						break;
 					default:
-						export_error = vformat("Project export failed with error code %d for preset '%s'.", (int)err, preset_name);
+						export_error = vformat("Project export failed with error code %d for preset \"%s\".", (int)err, preset_name);
 						break;
 				}
 			}
@@ -1377,18 +1389,18 @@ void EditorNode::_save_scene_with_preview(String p_file, int p_idx) {
 		// which would result in an invalid texture.
 		if (c3d == 0 && c2d == 0) {
 			img.instance();
-			img->create(1, 1, 0, Image::FORMAT_RGB8);
+			img->create(1, 1, false, Image::FORMAT_RGB8);
 		} else if (c3d < c2d) {
 			Ref<ViewportTexture> viewport_texture = scene_root->get_texture();
 			if (viewport_texture->get_width() > 0 && viewport_texture->get_height() > 0) {
-				img = viewport_texture->get_data();
+				img = viewport_texture->get_image();
 			}
 		} else {
 			// The 3D editor may be disabled as a feature, but scenes can still be opened.
 			// This check prevents the preview from regenerating in case those scenes are then saved.
 			Ref<EditorFeatureProfile> profile = feature_profile_manager->get_current_profile();
 			if (profile.is_valid() && !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_3D)) {
-				img = Node3DEditor::get_singleton()->get_editor_viewport(0)->get_viewport_node()->get_texture()->get_data();
+				img = Node3DEditor::get_singleton()->get_editor_viewport(0)->get_viewport_node()->get_texture()->get_image();
 			}
 		}
 
@@ -2835,7 +2847,7 @@ void EditorNode::_save_screenshot(NodePath p_path) {
 	ERR_FAIL_COND_MSG(!viewport, "Cannot get editor main control viewport.");
 	Ref<ViewportTexture> texture = viewport->get_texture();
 	ERR_FAIL_COND_MSG(texture.is_null(), "Cannot get editor main control viewport texture.");
-	Ref<Image> img = texture->get_data();
+	Ref<Image> img = texture->get_image();
 	ERR_FAIL_COND_MSG(img.is_null(), "Cannot get editor main control viewport texture image.");
 	Error error = img->save_png(p_path);
 	ERR_FAIL_COND_MSG(error != OK, "Cannot save screenshot to file '" + p_path + "'.");
@@ -5108,8 +5120,8 @@ Variant EditorNode::drag_resource(const Ref<Resource> &p_res, Control *p_from) {
 
 	{
 		//todo make proper previews
-		Ref<ImageTexture> pic = gui_base->get_theme_icon("FileBigThumb", "EditorIcons");
-		Ref<Image> img = pic->get_data();
+		Ref<ImageTexture> texture = gui_base->get_theme_icon("FileBigThumb", "EditorIcons");
+		Ref<Image> img = texture->get_image();
 		img = img->duplicate();
 		img->resize(48, 48); //meh
 		Ref<ImageTexture> resized_pic = Ref<ImageTexture>(memnew(ImageTexture));

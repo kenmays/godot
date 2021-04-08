@@ -1826,6 +1826,8 @@ void VisualScriptEditor::_generic_search(String p_base_type, Vector2 pos, bool n
 }
 
 void VisualScriptEditor::_input(const Ref<InputEvent> &p_event) {
+	ERR_FAIL_COND(p_event.is_null());
+
 	// GUI input for VS Editor Plugin
 	Ref<InputEventMouseButton> key = p_event;
 
@@ -3015,9 +3017,9 @@ void VisualScriptEditor::_graph_connect_to_empty(const String &p_from, int p_fro
 	if (!vsn.is_valid()) {
 		return;
 	}
-	if (vsn->get_output_value_port_count())
-
+	if (vsn->get_output_value_port_count()) {
 		port_action_pos = p_release_pos;
+	}
 
 	if (p_from_slot < vsn->get_output_sequence_port_count()) {
 		port_action_node = p_from.to_int();

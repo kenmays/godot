@@ -100,6 +100,7 @@ private:
 	FileDialog *fdialog_install;
 	String zip_path;
 	String zip_title;
+	String zip_root;
 	AcceptDialog *dialog_error;
 	String fav_dir;
 
@@ -200,7 +201,9 @@ private:
 						char fname[16384];
 						ret = unzGetCurrentFileInfo(pkg, &info, fname, 16384, nullptr, 0, nullptr, 0);
 
-						if (String(fname).ends_with("project.godot")) {
+						String fname_str = String(fname);
+						if (fname_str.ends_with("project.godot")) {
+							zip_root = fname_str.substr(0, fname_str.rfind("project.godot"));
 							break;
 						}
 
@@ -533,44 +536,34 @@ private:
 
 						String path = fname;
 
-						int depth = 1; //stuff from github comes with tag
-						bool skip = false;
-						while (depth > 0) {
-							int pp = path.find("/");
-							if (pp == -1) {
-								skip = true;
-								break;
-							}
-							path = path.substr(pp + 1, path.length());
-							depth--;
-						}
-
-						if (skip || path == String()) {
+						if (path == String() || path == zip_root || !zip_root.is_subsequence_of(path)) {
 							//
 						} else if (path.ends_with("/")) { // a dir
 
 							path = path.substr(0, path.length() - 1);
+							String rel_path = path.substr(zip_root.length());
 
 							DirAccess *da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-							da->make_dir(dir.plus_file(path));
+							da->make_dir(dir.plus_file(rel_path));
 							memdelete(da);
 
 						} else {
 							Vector<uint8_t> data;
 							data.resize(info.uncompressed_size);
+							String rel_path = path.substr(zip_root.length());
 
 							//read
 							unzOpenCurrentFile(pkg);
 							unzReadCurrentFile(pkg, data.ptrw(), data.size());
 							unzCloseCurrentFile(pkg);
 
-							FileAccess *f = FileAccess::open(dir.plus_file(path), FileAccess::WRITE);
+							FileAccess *f = FileAccess::open(dir.plus_file(rel_path), FileAccess::WRITE);
 
 							if (f) {
 								f->store_buffer(data.ptr(), data.size());
 								memdelete(f);
 							} else {
-								failed_files.push_back(path);
+								failed_files.push_back(rel_path);
 							}
 						}
 
@@ -1038,7 +1031,7 @@ public:
 	int get_project_count() const;
 	void select_project(int p_index);
 	void select_first_visible_project();
-	void erase_selected_projects();
+	void erase_selected_projects(bool p_delete_project_contents);
 	Vector<Item> get_selected_projects() const;
 	const Set<String> &get_selected_project_keys() const;
 	void ensure_project_visible(int p_index);
@@ -1693,7 +1686,7 @@ void ProjectList::toggle_select(int p_index) {
 	item.control->update();
 }
 
-void ProjectList::erase_selected_projects() {
+void ProjectList::erase_selected_projects(bool p_delete_project_contents) {
 	if (_selected_project_keys.size() == 0) {
 		return;
 	}
@@ -1703,6 +1696,10 @@ void ProjectList::erase_selected_projects() {
 		if (_selected_project_keys.has(item.project_key) && item.control->is_visible()) {
 			EditorSettings::get_singleton()->erase("projects/" + item.project_key);
 			EditorSettings::get_singleton()->erase("favorite_projects/" + item.project_key);
+
+			if (p_delete_project_contents) {
+				OS::get_singleton()->move_to_trash(item.path);
+			}
 
 			memdelete(item.control);
 			_projects.remove(i);
@@ -1889,6 +1886,8 @@ void ProjectManager::_update_project_buttons() {
 }
 
 void ProjectManager::_unhandled_key_input(const Ref<InputEvent> &p_ev) {
+	ERR_FAIL_COND(p_ev.is_null());
+
 	Ref<InputEventKey> k = p_ev;
 
 	if (k.is_valid()) {
@@ -2222,7 +2221,7 @@ void ProjectManager::_rename_project() {
 }
 
 void ProjectManager::_erase_project_confirm() {
-	_project_list->erase_selected_projects();
+	_project_list->erase_selected_projects(delete_project_contents->is_pressed());
 	_update_project_buttons();
 }
 
@@ -2240,12 +2239,13 @@ void ProjectManager::_erase_project() {
 
 	String confirm_message;
 	if (selected_list.size() >= 2) {
-		confirm_message = vformat(TTR("Remove %d projects from the list?\nThe project folders' contents won't be modified."), selected_list.size());
+		confirm_message = vformat(TTR("Remove %d projects from the list?"), selected_list.size());
 	} else {
-		confirm_message = TTR("Remove this project from the list?\nThe project folder's contents won't be modified.");
+		confirm_message = TTR("Remove this project from the list?");
 	}
 
-	erase_ask->set_text(confirm_message);
+	erase_ask_label->set_text(confirm_message);
+	delete_project_contents->set_pressed(false);
 	erase_ask->popup_centered();
 }
 
@@ -2336,6 +2336,17 @@ void ProjectManager::_on_order_option_changed(int p_idx) {
 	if (is_inside_tree()) {
 		_project_list->set_order_option(p_idx);
 	}
+}
+
+void ProjectManager::_on_tab_changed(int p_tab) {
+	if (p_tab == 0) { // Projects
+		// Automatically grab focus when the user moves from the Templates tab
+		// back to the Projects tab.
+		search_box->grab_focus();
+	}
+
+	// The Templates tab's search field is focused on display in the asset
+	// library editor plugin code.
 }
 
 void ProjectManager::_on_search_term_changed(const String &p_term) {
@@ -2463,6 +2474,7 @@ ProjectManager::ProjectManager() {
 	center_box->add_child(tabs);
 	tabs->set_anchors_and_offsets_preset(Control::PRESET_WIDE);
 	tabs->set_tab_align(TabContainer::ALIGN_LEFT);
+	tabs->connect("tab_changed", callable_mp(this, &ProjectManager::_on_tab_changed));
 
 	HBoxContainer *projects_hb = memnew(HBoxContainer);
 	projects_hb->set_name(TTR("Projects"));
@@ -2479,8 +2491,8 @@ ProjectManager::ProjectManager() {
 		search_tree_vb->add_child(hb);
 
 		search_box = memnew(LineEdit);
-		search_box->set_placeholder(TTR("Search"));
-		search_box->set_tooltip(TTR("The search box filters projects by name and last path component.\nTo filter projects by name and full path, the query must contain at least one `/` character."));
+		search_box->set_placeholder(TTR("Filter projects"));
+		search_box->set_tooltip(TTR("This field filters projects by name and last path component.\nTo filter projects by name and full path, the query must contain at least one `/` character."));
 		search_box->connect("text_changed", callable_mp(this, &ProjectManager::_on_search_term_changed));
 		search_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		hb->add_child(search_box);
@@ -2657,6 +2669,16 @@ ProjectManager::ProjectManager() {
 		erase_ask->get_ok_button()->set_text(TTR("Remove"));
 		erase_ask->get_ok_button()->connect("pressed", callable_mp(this, &ProjectManager::_erase_project_confirm));
 		add_child(erase_ask);
+
+		VBoxContainer *erase_ask_vb = memnew(VBoxContainer);
+		erase_ask->add_child(erase_ask_vb);
+
+		erase_ask_label = memnew(Label);
+		erase_ask_vb->add_child(erase_ask_label);
+
+		delete_project_contents = memnew(CheckBox);
+		delete_project_contents->set_text(TTR("Also delete project contents (no undo!)"));
+		erase_ask_vb->add_child(delete_project_contents);
 
 		multi_open_ask = memnew(ConfirmationDialog);
 		multi_open_ask->get_ok_button()->set_text(TTR("Edit"));

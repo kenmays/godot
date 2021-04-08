@@ -649,14 +649,16 @@ public:
 				Color color = get_theme_color("highlight_color", "Editor");
 				for (int i = 0; i < 2; i++) {
 					Point2 ofs(4, vofs);
-					if (i == 1)
+					if (i == 1) {
 						ofs.y += bsize + 1;
+					}
 
 					ofs += rect.position;
 					for (int j = 0; j < 10; j++) {
 						Point2 o = ofs + Point2(j * (bsize + 1), 0);
-						if (j >= 5)
+						if (j >= 5) {
 							o.x += 1;
+						}
 
 						const int idx = i * 10 + j;
 						const bool on = value & (1 << idx);
@@ -2975,6 +2977,7 @@ void EditorPropertyResource::update_property() {
 	if (res == RES()) {
 		assign->set_icon(Ref<Texture2D>());
 		assign->set_text(TTR("[empty]"));
+		assign->set_custom_minimum_size(Size2(1, 1));
 	} else {
 		assign->set_icon(EditorNode::get_singleton()->get_object_icon(res.operator->(), "Object"));
 
@@ -3281,7 +3284,7 @@ void EditorInspectorDefaultPlugin::parse_begin(Object *p_object) {
 }
 
 bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Type p_type, const String &p_path, PropertyHint p_hint, const String &p_hint_text, int p_usage, bool p_wide) {
-	float default_float_step = EDITOR_GET("interface/inspector/default_float_step");
+	double default_float_step = EDITOR_GET("interface/inspector/default_float_step");
 
 	switch (p_type) {
 		// atomic types

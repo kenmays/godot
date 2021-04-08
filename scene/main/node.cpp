@@ -1690,7 +1690,7 @@ NodePath Node::get_path_to(const Node *p_node) const {
 		n = n->data.parent;
 	}
 
-	path.invert();
+	path.reverse();
 
 	return NodePath(path, false);
 }
@@ -1711,7 +1711,7 @@ NodePath Node::get_path() const {
 		n = n->data.parent;
 	}
 
-	path.invert();
+	path.reverse();
 
 	data.path_cache = memnew(NodePath(path, true));
 
@@ -1968,8 +1968,9 @@ Node *Node::get_deepest_editable_node(Node *p_start_node) const {
 	Node *node = p_start_node;
 
 	while (iterated_item->get_owner() && iterated_item->get_owner() != this) {
-		if (!is_editable_instance(iterated_item->get_owner()))
+		if (!is_editable_instance(iterated_item->get_owner())) {
 			node = iterated_item->get_owner();
+		}
 
 		iterated_item = iterated_item->get_owner();
 	}

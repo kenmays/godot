@@ -682,6 +682,8 @@ bool EditorProperty::is_selected() const {
 }
 
 void EditorProperty::_gui_input(const Ref<InputEvent> &p_event) {
+	ERR_FAIL_COND(p_event.is_null());
+
 	if (property == StringName()) {
 		return;
 	}
@@ -1354,6 +1356,8 @@ void EditorInspectorSection::setup(const String &p_section, const String &p_labe
 }
 
 void EditorInspectorSection::_gui_input(const Ref<InputEvent> &p_event) {
+	ERR_FAIL_COND(p_event.is_null());
+
 	if (!foldable) {
 		return;
 	}
@@ -2566,9 +2570,9 @@ void EditorInspector::_update_script_class_properties(const Object &p_object, Li
 	}
 
 	// Script Variables -> to insert: NodeC..B..A -> bottom (insert_here)
-	List<PropertyInfo>::Element *script_variables = NULL;
-	List<PropertyInfo>::Element *bottom = NULL;
-	List<PropertyInfo>::Element *insert_here = NULL;
+	List<PropertyInfo>::Element *script_variables = nullptr;
+	List<PropertyInfo>::Element *bottom = nullptr;
+	List<PropertyInfo>::Element *insert_here = nullptr;
 	for (List<PropertyInfo>::Element *E = r_list.front(); E; E = E->next()) {
 		PropertyInfo &pi = E->get();
 		if (pi.name != "Script Variables") {

@@ -61,6 +61,8 @@ void SceneTreeDock::_quick_open() {
 }
 
 void SceneTreeDock::_input(Ref<InputEvent> p_event) {
+	ERR_FAIL_COND(p_event.is_null());
+
 	Ref<InputEventMouseButton> mb = p_event;
 
 	if (mb.is_valid() && !mb->is_pressed() && mb->get_button_index() == MOUSE_BUTTON_LEFT) {
@@ -69,6 +71,8 @@ void SceneTreeDock::_input(Ref<InputEvent> p_event) {
 }
 
 void SceneTreeDock::_unhandled_key_input(Ref<InputEvent> p_event) {
+	ERR_FAIL_COND(p_event.is_null());
+
 	if (get_focus_owner() && get_focus_owner()->is_text_field()) {
 		return;
 	}
@@ -608,7 +612,7 @@ void SceneTreeDock::_tool_selected(int p_tool, bool p_confirm_override) {
 			List<Node *> selection = editor_selection->get_selected_node_list();
 			selection.sort_custom<Node::Comparator>(); // sort by index
 			if (MOVING_DOWN) {
-				selection.invert();
+				selection.reverse();
 			}
 
 			int lowest_id = common_parent->get_child_count() - 1;
@@ -1384,7 +1388,7 @@ void SceneTreeDock::fill_path_renames(Node *p_node, Node *p_new_parent, List<Pai
 		base_path.push_back(n->get_name());
 		n = n->get_parent();
 	}
-	base_path.invert();
+	base_path.reverse();
 
 	Vector<StringName> new_base_path;
 	if (p_new_parent) {
@@ -1394,7 +1398,7 @@ void SceneTreeDock::fill_path_renames(Node *p_node, Node *p_new_parent, List<Pai
 			n = n->get_parent();
 		}
 
-		new_base_path.invert();
+		new_base_path.reverse();
 	}
 
 	_fill_path_renames(base_path, new_base_path, p_node, p_renames);
@@ -1580,7 +1584,7 @@ void SceneTreeDock::_node_prerenamed(Node *p_node, const String &p_new_name) {
 		base_path.push_back(n->get_name());
 		n = n->get_parent();
 	}
-	base_path.invert();
+	base_path.reverse();
 
 	Vector<StringName> new_base_path = base_path;
 	base_path.push_back(p_node->get_name());

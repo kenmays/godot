@@ -131,7 +131,7 @@ bool ViewportTexture::has_alpha() const {
 	return false;
 }
 
-Ref<Image> ViewportTexture::get_data() const {
+Ref<Image> ViewportTexture::get_image() const {
 	ERR_FAIL_COND_V_MSG(!vp, Ref<Image>(), "Viewport Texture must be set to use it.");
 	return RS::get_singleton()->texture_2d_get(vp->texture_rid);
 }
@@ -2399,29 +2399,27 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 		if (from && p_event->is_pressed()) {
 			Control *next = nullptr;
 
-			Input *input = Input::get_singleton();
-
-			if (p_event->is_action_pressed("ui_focus_next") && input->is_action_just_pressed("ui_focus_next")) {
+			if (p_event->is_action_pressed("ui_focus_next", true)) {
 				next = from->find_next_valid_focus();
 			}
 
-			if (p_event->is_action_pressed("ui_focus_prev") && input->is_action_just_pressed("ui_focus_prev")) {
+			if (p_event->is_action_pressed("ui_focus_prev", true)) {
 				next = from->find_prev_valid_focus();
 			}
 
-			if (!mods && p_event->is_action_pressed("ui_up") && input->is_action_just_pressed("ui_up")) {
+			if (!mods && p_event->is_action_pressed("ui_up", true)) {
 				next = from->_get_focus_neighbor(SIDE_TOP);
 			}
 
-			if (!mods && p_event->is_action_pressed("ui_left") && input->is_action_just_pressed("ui_left")) {
+			if (!mods && p_event->is_action_pressed("ui_left", true)) {
 				next = from->_get_focus_neighbor(SIDE_LEFT);
 			}
 
-			if (!mods && p_event->is_action_pressed("ui_right") && input->is_action_just_pressed("ui_right")) {
+			if (!mods && p_event->is_action_pressed("ui_right", true)) {
 				next = from->_get_focus_neighbor(SIDE_RIGHT);
 			}
 
-			if (!mods && p_event->is_action_pressed("ui_down") && input->is_action_just_pressed("ui_down")) {
+			if (!mods && p_event->is_action_pressed("ui_down", true)) {
 				next = from->_get_focus_neighbor(SIDE_BOTTOM);
 			}
 
@@ -3067,6 +3065,7 @@ void Viewport::input(const Ref<InputEvent> &p_event, bool p_local_coords) {
 }
 
 void Viewport::unhandled_input(const Ref<InputEvent> &p_event, bool p_local_coords) {
+	ERR_FAIL_COND(p_event.is_null());
 	ERR_FAIL_COND(!is_inside_tree());
 
 	if (disable_input || !_can_consume_input_events()) {
@@ -3227,8 +3226,9 @@ Viewport::ScreenSpaceAA Viewport::get_screen_space_aa() const {
 }
 
 void Viewport::set_use_debanding(bool p_use_debanding) {
-	if (use_debanding == p_use_debanding)
+	if (use_debanding == p_use_debanding) {
 		return;
+	}
 	use_debanding = p_use_debanding;
 	RS::get_singleton()->viewport_set_use_debanding(viewport, p_use_debanding);
 }

@@ -185,6 +185,8 @@ void ViewportRotationControl::_get_sorted_axis(Vector<Axis2D> &r_axis) {
 }
 
 void ViewportRotationControl::_gui_input(Ref<InputEvent> p_event) {
+	ERR_FAIL_COND(p_event.is_null());
+
 	const Ref<InputEventMouseButton> mb = p_event;
 	if (mb.is_valid() && mb->get_button_index() == MOUSE_BUTTON_LEFT) {
 		Vector2 pos = mb->get_position();
@@ -1472,7 +1474,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 
 				Vector3 ray_pos = _get_ray_pos(m->get_position());
 				Vector3 ray = _get_ray(m->get_position());
-				float snap = EDITOR_GET("interface/inspector/default_float_step");
+				double snap = EDITOR_GET("interface/inspector/default_float_step");
 				int snap_step_decimals = Math::range_step_decimals(snap);
 
 				switch (_edit.mode) {
@@ -1766,7 +1768,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 						Vector3 y_axis = (click - _edit.center).normalized();
 						Vector3 x_axis = plane.normal.cross(y_axis).normalized();
 
-						float angle = Math::atan2(x_axis.dot(intersection - _edit.center), y_axis.dot(intersection - _edit.center));
+						double angle = Math::atan2(x_axis.dot(intersection - _edit.center), y_axis.dot(intersection - _edit.center));
 
 						if (_edit.snap || spatial_editor->is_snap_enabled()) {
 							snap = spatial_editor->get_rotate_snap();
@@ -4192,6 +4194,8 @@ Node3DEditorViewport::~Node3DEditorViewport() {
 //////////////////////////////////////////////////////////////
 
 void Node3DEditorViewportContainer::_gui_input(const Ref<InputEvent> &p_event) {
+	ERR_FAIL_COND(p_event.is_null());
+
 	Ref<InputEventMouseButton> mb = p_event;
 
 	if (mb.is_valid() && mb->get_button_index() == MOUSE_BUTTON_LEFT) {
@@ -4577,7 +4581,12 @@ void _update_all_gizmos(Node *p_node) {
 
 void Node3DEditor::update_all_gizmos(Node *p_node) {
 	if (!p_node) {
-		p_node = SceneTree::get_singleton()->get_root();
+		if (SceneTree::get_singleton()) {
+			p_node = SceneTree::get_singleton()->get_root();
+		} else {
+			// No scene tree, so nothing to update.
+			return;
+		}
 	}
 	_update_all_gizmos(p_node);
 }
@@ -6154,6 +6163,8 @@ void Node3DEditor::snap_selected_nodes_to_floor() {
 }
 
 void Node3DEditor::_unhandled_key_input(Ref<InputEvent> p_event) {
+	ERR_FAIL_COND(p_event.is_null());
+
 	if (!is_visible_in_tree()) {
 		return;
 	}

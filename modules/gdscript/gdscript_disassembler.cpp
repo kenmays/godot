@@ -322,6 +322,14 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr += 4;
 			} break;
+			case OPCODE_ASSIGN_TYPED_ARRAY: {
+				text += "assign typed array ";
+				text += DADDR(1);
+				text += " = ";
+				text += DADDR(2);
+
+				incr += 3;
+			} break;
 			case OPCODE_ASSIGN_TYPED_NATIVE: {
 				text += "assign typed native (";
 				text += DADDR(3);
@@ -385,8 +393,9 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				text += Variant::get_type_name(t) + "(";
 				for (int i = 0; i < argc; i++) {
-					if (i > 0)
+					if (i > 0) {
 						text += ", ";
+					}
 					text += DADDR(i + 1);
 				}
 				text += ")";
@@ -402,8 +411,9 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				text += "<unkown type>(";
 				for (int i = 0; i < argc; i++) {
-					if (i > 0)
+					if (i > 0) {
 						text += ", ";
+					}
 					text += DADDR(i + 1);
 				}
 				text += ")";
@@ -417,8 +427,43 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += " = [";
 
 				for (int i = 0; i < argc; i++) {
-					if (i > 0)
+					if (i > 0) {
 						text += ", ";
+					}
+					text += DADDR(1 + i);
+				}
+
+				text += "]";
+
+				incr += 3 + argc;
+			} break;
+			case OPCODE_CONSTRUCT_TYPED_ARRAY: {
+				int argc = _code_ptr[ip + 1 + instr_var_args];
+
+				Ref<Script> script_type = get_constant(_code_ptr[ip + argc + 2]);
+				Variant::Type builtin_type = (Variant::Type)_code_ptr[ip + argc + 4];
+				StringName native_type = get_global_name(_code_ptr[ip + argc + 5]);
+
+				String type_name;
+				if (script_type.is_valid() && script_type->is_valid()) {
+					type_name = script_type->get_path();
+				} else if (native_type != StringName()) {
+					type_name = native_type;
+				} else {
+					type_name = Variant::get_type_name(builtin_type);
+				}
+
+				text += " make_typed_array (";
+				text += type_name;
+				text += ") ";
+
+				text += DADDR(1 + argc);
+				text += " = [";
+
+				for (int i = 0; i < argc; i++) {
+					if (i > 0) {
+						text += ", ";
+					}
 					text += DADDR(1 + i);
 				}
 
@@ -433,8 +478,9 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += " = {";
 
 				for (int i = 0; i < argc; i++) {
-					if (i > 0)
+					if (i > 0) {
 						text += ", ";
+					}
 					text += DADDR(1 + i * 2 + 0);
 					text += ": ";
 					text += DADDR(1 + i * 2 + 1);
@@ -468,8 +514,9 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += "(";
 
 				for (int i = 0; i < argc; i++) {
-					if (i > 0)
+					if (i > 0) {
 						text += ", ";
+					}
 					text += DADDR(1 + i);
 				}
 				text += ")";
@@ -498,8 +545,9 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += "(";
 
 				for (int i = 0; i < argc; i++) {
-					if (i > 0)
+					if (i > 0) {
 						text += ", ";
+					}
 					text += DADDR(1 + i);
 				}
 				text += ")";
@@ -518,8 +566,9 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += "(";
 
 				for (int i = 0; i < argc; i++) {
-					if (i > 0)
+					if (i > 0) {
 						text += ", ";
+					}
 					text += DADDR(1 + i);
 				}
 				text += ")";
@@ -595,8 +644,9 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += "(";
 
 				for (int i = 0; i < argc; i++) {
-					if (i > 0)
+					if (i > 0) {
 						text += ", ";
+					}
 					text += DADDR(1 + i);
 				}
 				text += ")";
@@ -613,8 +663,9 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += "(";
 
 				for (int i = 0; i < argc; i++) {
-					if (i > 0)
+					if (i > 0) {
 						text += ", ";
+					}
 					text += DADDR(1 + i);
 				}
 				text += ")";
@@ -631,8 +682,9 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += "(";
 
 				for (int i = 0; i < argc; i++) {
-					if (i > 0)
+					if (i > 0) {
 						text += ", ";
+					}
 					text += DADDR(1 + i);
 				}
 				text += ")";
@@ -649,8 +701,9 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += "(";
 
 				for (int i = 0; i < argc; i++) {
-					if (i > 0)
+					if (i > 0) {
 						text += ", ";
+					}
 					text += DADDR(1 + i);
 				}
 				text += ")";
@@ -667,8 +720,9 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += "(";
 
 				for (int i = 0; i < argc; i++) {
-					if (i > 0)
+					if (i > 0) {
 						text += ", ";
+					}
 					text += DADDR(1 + i);
 				}
 				text += ")";
@@ -719,6 +773,39 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += DADDR(1);
 
 				incr = 2;
+			} break;
+			case OPCODE_RETURN_TYPED_BUILTIN: {
+				text += "return typed builtin (";
+				text += Variant::get_type_name((Variant::Type)_code_ptr[ip + 2]);
+				text += ") ";
+				text += DADDR(1);
+
+				incr += 3;
+			} break;
+			case OPCODE_RETURN_TYPED_ARRAY: {
+				text += "return typed array ";
+				text += DADDR(1);
+
+				incr += 5;
+			} break;
+			case OPCODE_RETURN_TYPED_NATIVE: {
+				text += "return typed native (";
+				text += DADDR(2);
+				text += ") ";
+				text += DADDR(1);
+
+				incr += 3;
+			} break;
+			case OPCODE_RETURN_TYPED_SCRIPT: {
+				Variant script = _constants_ptr[_code_ptr[ip + 2]];
+				Script *sc = Object::cast_to<Script>(script.operator Object *());
+
+				text += "return typed script (";
+				text += sc->get_path();
+				text += ") ";
+				text += DADDR(1);
+
+				incr += 3;
 			} break;
 
 #define DISASSEMBLE_ITERATE(m_type)      \
