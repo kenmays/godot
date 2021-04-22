@@ -1007,6 +1007,33 @@ PREAMBLE(void)::batch_initialize() {
 	bdata.settings_use_software_skinning = GLOBAL_GET("rendering/2d/options/use_software_skinning");
 	bdata.settings_ninepatch_mode = GLOBAL_GET("rendering/2d/options/ninepatch_mode");
 
+	// allow user to override the api usage techniques using project settings
+	int send_null_mode = GLOBAL_GET("rendering/2d/opengl/batching_send_null");
+	switch (send_null_mode) {
+		default: {
+			bdata.buffer_mode_batch_upload_send_null = true;
+		} break;
+		case 1: {
+			bdata.buffer_mode_batch_upload_send_null = false;
+		} break;
+		case 2: {
+			bdata.buffer_mode_batch_upload_send_null = true;
+		} break;
+	}
+
+	int stream_mode = GLOBAL_GET("rendering/2d/opengl/batching_stream");
+	switch (stream_mode) {
+		default: {
+			bdata.buffer_mode_batch_upload_flag_stream = false;
+		} break;
+		case 1: {
+			bdata.buffer_mode_batch_upload_flag_stream = false;
+		} break;
+		case 2: {
+			bdata.buffer_mode_batch_upload_flag_stream = true;
+		} break;
+	}
+
 	// alternatively only enable uv contract if pixel snap in use,
 	// but with this enable bool, it should not be necessary
 	bdata.settings_uv_contract = GLOBAL_GET("rendering/batching/precision/uv_contract");
@@ -1282,8 +1309,9 @@ PREAMBLE(bool)::_prefill_line(RasterizerCanvas::Item::CommandLine *p_line, FillS
 	// get the baked line color
 	Color col = p_line->color;
 
-	if (multiply_final_modulate)
+	if (multiply_final_modulate) {
 		col *= r_fill_state.final_modulate;
+	}
 
 	BatchColor bcol;
 	bcol.set(col);
@@ -1608,10 +1636,11 @@ bool C_PREAMBLE::_prefill_polygon(RasterizerCanvas::Item::CommandPolygon *p_poly
 
 	// the modulate is always baked
 	Color modulate;
-	if (!use_large_verts && !use_modulate && multiply_final_modulate)
+	if (multiply_final_modulate) {
 		modulate = r_fill_state.final_modulate;
-	else
+	} else {
 		modulate = Color(1, 1, 1, 1);
+	}
 
 	int old_batch_tex_id = r_fill_state.batch_tex_id;
 	r_fill_state.batch_tex_id = _batch_find_or_create_tex(p_poly->texture, p_poly->normal_map, false, old_batch_tex_id);
@@ -1924,10 +1953,11 @@ bool C_PREAMBLE::_prefill_rect(RasterizerCanvas::Item::CommandRect *rect, FillSt
 
 	Color col = rect->modulate;
 
-	if (!use_large_verts) {
-		if (multiply_final_modulate) {
-			col *= r_fill_state.final_modulate;
-		}
+	// use_modulate and use_large_verts should have been checked in the calling prefill_item function.
+	// we don't want to apply the modulate on the CPU if it is stored in the vertex format, it will
+	// be applied in the shader
+	if (multiply_final_modulate) {
+		col *= r_fill_state.final_modulate;
 	}
 
 	// instead of doing all the texture preparation for EVERY rect,
@@ -2191,19 +2221,15 @@ PREAMBLE(bool)::prefill_joined_item(FillState &r_fill_state, int &r_command_star
 	int command_count = p_item->commands.size();
 	RasterizerCanvas::Item::Command *const *commands = p_item->commands.ptr();
 
-	// checking the color for not being white makes it 92/90 times faster in the case where it is white
-	bool multiply_final_modulate = false;
-	if (!r_fill_state.is_single_item && (r_fill_state.final_modulate != Color(1, 1, 1, 1))) {
-		multiply_final_modulate = true;
+	// whether to multiply final modulate on the CPU, or pass it in the FVF and apply in the shader
+	bool multiply_final_modulate = true;
+
+	if (r_fill_state.is_single_item || bdata.use_modulate || bdata.use_large_verts) {
+		multiply_final_modulate = false;
 	}
 
 	// start batch is a dummy batch (tex id -1) .. could be made more efficient
 	if (!r_fill_state.curr_batch) {
-		// OLD METHOD, but left dangling zero length default batches
-		//		r_fill_state.curr_batch = _batch_request_new();
-		//		r_fill_state.curr_batch->type = RasterizerStorageCommon::BT_DEFAULT;
-		//		r_fill_state.curr_batch->first_command = r_command_start;
-		// should tex_id be set to -1? check this
 
 		// allocate dummy batch on the stack, it should always get replaced
 		// note that the rest of the structure is uninitialized, this should not matter
@@ -2655,6 +2681,9 @@ PREAMBLE(void)::join_sorted_items() {
 			BItemRef *r = bdata.item_refs.request_with_grow();
 			r->item = ci;
 			r->final_modulate = _render_item_state.final_modulate;
+
+			// joined item references may introduce new flags
+			_render_item_state.joined_item->flags |= bdata.joined_item_batch_flags;
 		}
 
 	} // for s through sort items
