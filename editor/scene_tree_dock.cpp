@@ -2610,14 +2610,16 @@ void SceneTreeDock::_tree_rmb(const Vector2 &p_menu_pos) {
 		}
 	}
 
-	if (profile_allow_script_editing) {
+	if (profile_allow_editing) {
 		menu->add_shortcut(ED_GET_SHORTCUT("scene_tree/cut_node"), TOOL_CUT);
 		menu->add_shortcut(ED_GET_SHORTCUT("scene_tree/copy_node"), TOOL_COPY);
 		if (selection.size() == 1 && !node_clipboard.empty()) {
 			menu->add_shortcut(ED_GET_SHORTCUT("scene_tree/paste_node"), TOOL_PASTE);
 		}
 		menu->add_separator();
+	}
 
+	if (profile_allow_script_editing) {
 		bool add_separator = false;
 
 		if (full_selection.size() == 1) {
@@ -2645,7 +2647,7 @@ void SceneTreeDock::_tree_rmb(const Vector2 &p_menu_pos) {
 			}
 		}
 
-		if (add_separator) {
+		if (add_separator && profile_allow_editing) {
 			menu->add_separator();
 		}
 	}
@@ -3086,7 +3088,7 @@ SceneTreeDock::SceneTreeDock(EditorNode *p_editor, Node *p_scene_root, EditorSel
 	ED_SHORTCUT("scene_tree/rename", TTR("Rename"), KEY_F2);
 	ED_SHORTCUT("scene_tree/batch_rename", TTR("Batch Rename"), KEY_MASK_SHIFT | KEY_F2);
 	ED_SHORTCUT("scene_tree/add_child_node", TTR("Add Child Node"), KEY_MASK_CMD | KEY_A);
-	ED_SHORTCUT("scene_tree/instance_scene", TTR("Instance Child Scene"));
+	ED_SHORTCUT("scene_tree/instance_scene", TTR("Instance Child Scene"), KEY_MASK_CMD | KEY_MASK_SHIFT | KEY_A);
 	ED_SHORTCUT("scene_tree/expand_collapse_all", TTR("Expand/Collapse All"));
 	ED_SHORTCUT("scene_tree/cut_node", TTR("Cut"), KEY_MASK_CMD | KEY_X);
 	ED_SHORTCUT("scene_tree/copy_node", TTR("Copy"), KEY_MASK_CMD | KEY_C);
@@ -3149,6 +3151,7 @@ SceneTreeDock::SceneTreeDock(EditorNode *p_editor, Node *p_scene_root, EditorSel
 	edit_remote->set_h_size_flags(SIZE_EXPAND_FILL);
 	edit_remote->set_text(TTR("Remote"));
 	edit_remote->set_toggle_mode(true);
+	edit_remote->set_tooltip(TTR("If selected, the Remote scene tree dock will cause the project to stutter every time it updates.\nSwitch back to the Local scene tree dock to improve performance."));
 	edit_remote->connect("pressed", this, "_remote_tree_selected");
 
 	edit_local = memnew(ToolButton);

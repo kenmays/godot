@@ -34,6 +34,7 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.view.KeyEvent;
 
+import androidx.annotation.CallSuper;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.FragmentActivity;
@@ -63,10 +64,27 @@ public abstract class FullScreenGodotApp extends FragmentActivity implements God
 
 	@Override
 	public void onNewIntent(Intent intent) {
+		super.onNewIntent(intent);
 		if (godotFragment != null) {
 			godotFragment.onNewIntent(intent);
-		} else {
-			super.onNewIntent(intent);
+		}
+	}
+
+	@CallSuper
+	@Override
+	public void onActivityResult(int requestCode, int resultCode, Intent data) {
+		super.onActivityResult(requestCode, resultCode, data);
+		if (godotFragment != null) {
+			godotFragment.onActivityResult(requestCode, resultCode, data);
+		}
+	}
+
+	@CallSuper
+	@Override
+	public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+		super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+		if (godotFragment != null) {
+			godotFragment.onRequestPermissionsResult(requestCode, permissions, grantResults);
 		}
 	}
 

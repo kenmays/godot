@@ -156,9 +156,29 @@ static Transform _arr_to_xform(const Array &p_array) {
 	return xform;
 }
 
+String EditorSceneImporterGLTF::_sanitize_scene_name(GLTFState &state, const String &p_name) {
+	if (state.use_legacy_names) {
+		RegEx regex("([^a-zA-Z0-9_ -]+)");
+		String s_name = regex.sub(p_name, "", true);
+		return s_name;
+	} else {
+		return p_name.validate_node_name();
+	}
+}
+
+String EditorSceneImporterGLTF::_legacy_validate_node_name(const String &p_name) {
+	String invalid_character = ". : @ / \"";
+	String name = p_name;
+	Vector<String> chars = invalid_character.split(" ");
+	for (int i = 0; i < chars.size(); i++) {
+		name = name.replace(chars[i], "");
+	}
+	return name;
+}
+
 String EditorSceneImporterGLTF::_gen_unique_name(GLTFState &state, const String &p_name) {
 
-	const String s_name = p_name.validate_node_name();
+	const String s_name = _sanitize_scene_name(state, p_name);
 
 	String name;
 	int index = 1;
@@ -166,6 +186,9 @@ String EditorSceneImporterGLTF::_gen_unique_name(GLTFState &state, const String 
 		name = s_name;
 
 		if (index > 1) {
+			if (state.use_legacy_names) {
+				name += " ";
+			}
 			name += itos(index);
 		}
 		if (!state.unique_names.has(name)) {
@@ -213,33 +236,37 @@ String EditorSceneImporterGLTF::_gen_unique_animation_name(GLTFState &state, con
 	return name;
 }
 
-String EditorSceneImporterGLTF::_sanitize_bone_name(const String &name) {
-	String p_name = name.camelcase_to_underscore(true);
+String EditorSceneImporterGLTF::_sanitize_bone_name(GLTFState &state, const String &p_name) {
+	if (state.use_legacy_names) {
+		String name = p_name.camelcase_to_underscore(true);
+		RegEx pattern_del("([^a-zA-Z0-9_ ])+");
 
-	RegEx pattern_nocolon(":");
-	p_name = pattern_nocolon.sub(p_name, "_", true);
+		name = pattern_del.sub(name, "", true);
 
-	RegEx pattern_noslash("/");
-	p_name = pattern_noslash.sub(p_name, "_", true);
+		RegEx pattern_nospace(" +");
+		name = pattern_nospace.sub(name, "_", true);
 
-	RegEx pattern_nospace(" +");
-	p_name = pattern_nospace.sub(p_name, "_", true);
+		RegEx pattern_multiple("_+");
+		name = pattern_multiple.sub(name, "_", true);
 
-	RegEx pattern_multiple("_+");
-	p_name = pattern_multiple.sub(p_name, "_", true);
+		RegEx pattern_padded("0+(\\d+)");
+		name = pattern_padded.sub(name, "$1", true);
 
-	RegEx pattern_padded("0+(\\d+)");
-	p_name = pattern_padded.sub(p_name, "$1", true);
-
-	return p_name;
+		return name;
+	} else {
+		String name = p_name;
+		name = name.replace(":", "_");
+		name = name.replace("/", "_");
+		if (name.empty()) {
+			name = "bone";
+		}
+		return name;
+	}
 }
 
 String EditorSceneImporterGLTF::_gen_unique_bone_name(GLTFState &state, const GLTFSkeletonIndex skel_i, const String &p_name) {
 
-	String s_name = _sanitize_bone_name(p_name);
-	if (s_name.empty()) {
-		s_name = "bone";
-	}
+	String s_name = _sanitize_bone_name(state, p_name);
 	String name;
 	int index = 1;
 	while (true) {
@@ -1431,8 +1458,11 @@ Error EditorSceneImporterGLTF::_parse_images(GLTFState &state, const String &p_b
 			}
 		}
 
-		ERR_FAIL_COND_V_MSG(img.is_null(), ERR_FILE_CORRUPT,
-				vformat("glTF: Couldn't load image index '%d' with its given mimetype: %s.", i, mimetype));
+		if (img.is_null()) {
+			ERR_PRINT(vformat("glTF: Couldn't load image index '%d' with its given mimetype: %s.", i, mimetype));
+			state.images.push_back(Ref<Texture>());
+			continue;
+		}
 
 		Ref<ImageTexture> t;
 		t.instance();
@@ -2071,80 +2101,10 @@ Error EditorSceneImporterGLTF::_reparent_non_joint_skeleton_subtrees(GLTFState &
 		subtree_set.get_members(subtree_nodes, subtree_root);
 
 		for (int subtree_i = 0; subtree_i < subtree_nodes.size(); ++subtree_i) {
-			ERR_FAIL_COND_V(_reparent_to_fake_joint(state, skeleton, subtree_nodes[subtree_i]), FAILED);
-
-			// We modified the tree, recompute all the heights
-			_compute_node_heights(state);
-		}
-	}
-
-	return OK;
-}
-
-Error EditorSceneImporterGLTF::_reparent_to_fake_joint(GLTFState &state, GLTFSkeleton &skeleton, const GLTFNodeIndex node_index) {
-	GLTFNode *node = state.nodes[node_index];
-
-	// Can we just "steal" this joint if it is just a spatial node?
-	if (node->skin < 0 && node->mesh < 0 && node->camera < 0) {
-		node->joint = true;
-		// Add the joint to the skeletons joints
-		skeleton.joints.push_back(node_index);
-		return OK;
-	}
-
-	GLTFNode *fake_joint = memnew(GLTFNode);
-	const GLTFNodeIndex fake_joint_index = state.nodes.size();
-	state.nodes.push_back(fake_joint);
-
-	// We better not be a joint, or we messed up in our logic
-	if (node->joint)
-		return FAILED;
-
-	fake_joint->translation = node->translation;
-	fake_joint->rotation = node->rotation;
-	fake_joint->scale = node->scale;
-	fake_joint->xform = node->xform;
-	fake_joint->joint = true;
-
-	// We can use the exact same name here, because the joint will be inside a skeleton and not the scene
-	fake_joint->name = node->name;
-
-	// Clear the nodes transforms, since it will be parented to the fake joint
-	node->translation = Vector3(0, 0, 0);
-	node->rotation = Quat();
-	node->scale = Vector3(1, 1, 1);
-	node->xform = Transform();
-
-	// Transfer the node children to the fake joint
-	for (int child_i = 0; child_i < node->children.size(); ++child_i) {
-		GLTFNode *child = state.nodes[node->children[child_i]];
-		child->parent = fake_joint_index;
-	}
-
-	fake_joint->children = node->children;
-	node->children.clear();
-
-	// add the fake joint to the parent and remove the original joint
-	if (node->parent >= 0) {
-		GLTFNode *parent = state.nodes[node->parent];
-		parent->children.erase(node_index);
-		parent->children.push_back(fake_joint_index);
-		fake_joint->parent = node->parent;
-	}
-
-	// Add the node to the fake joint
-	fake_joint->children.push_back(node_index);
-	node->parent = fake_joint_index;
-	node->fake_joint_parent = fake_joint_index;
-
-	// Add the fake joint to the skeletons joints
-	skeleton.joints.push_back(fake_joint_index);
-
-	// Replace skin_skeletons with fake joints if we must.
-	for (GLTFSkinIndex skin_i = 0; skin_i < state.skins.size(); ++skin_i) {
-		GLTFSkin &skin = state.skins.write[skin_i];
-		if (skin.skin_root == node_index) {
-			skin.skin_root = fake_joint_index;
+			GLTFNode *node = state.nodes[subtree_nodes[subtree_i]];
+			node->joint = true;
+			// Add the joint to the skeletons joints
+			skeleton.joints.push_back(subtree_nodes[subtree_i]);
 		}
 	}
 
@@ -2350,6 +2310,9 @@ bool EditorSceneImporterGLTF::_skins_are_same(const Ref<Skin> &skin_a, const Ref
 		if (skin_a->get_bind_bone(i) != skin_b->get_bind_bone(i)) {
 			return false;
 		}
+		if (skin_a->get_bind_name(i) != skin_b->get_bind_name(i)) {
+			return false;
+		}
 
 		Transform a_xform = skin_a->get_bind_pose(i);
 		Transform b_xform = skin_b->get_bind_pose(i);
@@ -2502,7 +2465,11 @@ Error EditorSceneImporterGLTF::_parse_animations(GLTFState &state) {
 			if (name.begins_with("loop") || name.ends_with("loop") || name.begins_with("cycle") || name.ends_with("cycle")) {
 				animation.loop = true;
 			}
-			animation.name = _gen_unique_animation_name(state, name);
+			if (state.use_legacy_names) {
+				animation.name = _sanitize_scene_name(state, name);
+			} else {
+				animation.name = _gen_unique_animation_name(state, name);
+			}
 		}
 
 		for (int j = 0; j < channels.size(); j++) {
@@ -2638,11 +2605,9 @@ void EditorSceneImporterGLTF::_assign_scene_names(GLTFState &state) {
 	}
 }
 
-BoneAttachment *EditorSceneImporterGLTF::_generate_bone_attachment(GLTFState &state, Skeleton *skeleton, const GLTFNodeIndex node_index) {
-
+BoneAttachment *EditorSceneImporterGLTF::_generate_bone_attachment(GLTFState &state, Skeleton *skeleton, const GLTFNodeIndex node_index, const GLTFNodeIndex bone_index) {
 	const GLTFNode *gltf_node = state.nodes[node_index];
-	const GLTFNode *bone_node = state.nodes[gltf_node->parent];
-
+	const GLTFNode *bone_node = state.nodes[bone_index];
 	BoneAttachment *bone_attachment = memnew(BoneAttachment);
 	print_verbose("glTF: Creating bone attachment for: " + gltf_node->name);
 
@@ -2675,7 +2640,7 @@ MeshInstance *EditorSceneImporterGLTF::_generate_mesh_instance(GLTFState &state,
 	return mi;
 }
 
-Light *EditorSceneImporterGLTF::_generate_light(GLTFState &state, Node *scene_parent, const GLTFNodeIndex node_index) {
+Spatial *EditorSceneImporterGLTF::_generate_light(GLTFState &state, Node *scene_parent, const GLTFNodeIndex node_index) {
 	const GLTFNode *gltf_node = state.nodes[node_index];
 
 	ERR_FAIL_INDEX_V(gltf_node->light, state.lights.size(), nullptr);
@@ -2724,7 +2689,7 @@ Light *EditorSceneImporterGLTF::_generate_light(GLTFState &state, Node *scene_pa
 		light->set_param(SpotLight::PARAM_SPOT_ATTENUATION, angle_attenuation);
 		return light;
 	}
-	return nullptr;
+	return memnew(Spatial);
 }
 
 Camera *EditorSceneImporterGLTF::_generate_camera(GLTFState &state, Node *scene_parent, const GLTFNodeIndex node_index) {
@@ -2758,31 +2723,22 @@ void EditorSceneImporterGLTF::_generate_scene_node(GLTFState &state, Node *scene
 
 	const GLTFNode *gltf_node = state.nodes[node_index];
 
+	if (gltf_node->skeleton >= 0) {
+		_generate_skeleton_bone_node(state, scene_parent, scene_root, node_index);
+		return;
+	}
+
 	Spatial *current_node = nullptr;
 
 	// Is our parent a skeleton
 	Skeleton *active_skeleton = Object::cast_to<Skeleton>(scene_parent);
 
-	if (gltf_node->skeleton >= 0) {
-		Skeleton *skeleton = state.skeletons[gltf_node->skeleton].godot_skeleton;
+	const bool non_bone_parented_to_skeleton = active_skeleton;
 
-		if (active_skeleton != skeleton) {
-			ERR_FAIL_COND_MSG(active_skeleton != nullptr, "glTF: Generating scene detected direct parented Skeletons");
-
-			// Add it to the scene if it has not already been added
-			if (skeleton->get_parent() == nullptr) {
-				scene_parent->add_child(skeleton);
-				skeleton->set_owner(scene_root);
-			}
-		}
-
-		active_skeleton = skeleton;
-		current_node = skeleton;
-	}
-
-	// If we have an active skeleton, and the node is node skinned, we need to create a bone attachment
-	if (current_node == nullptr && active_skeleton != nullptr && gltf_node->skin < 0) {
-		BoneAttachment *bone_attachment = _generate_bone_attachment(state, active_skeleton, node_index);
+	// skinned meshes must not be placed in a bone attachment.
+	if (non_bone_parented_to_skeleton && gltf_node->skin < 0) {
+		// Bone Attachment - Parent Case
+		BoneAttachment *bone_attachment = _generate_bone_attachment(state, active_skeleton, node_index, gltf_node->parent);
 
 		scene_parent->add_child(bone_attachment);
 		bone_attachment->set_owner(scene_root);
@@ -2796,20 +2752,22 @@ void EditorSceneImporterGLTF::_generate_scene_node(GLTFState &state, Node *scene
 	}
 
 	// We still have not managed to make a node
-	if (current_node == nullptr) {
-		if (gltf_node->mesh >= 0) {
-			current_node = _generate_mesh_instance(state, scene_parent, node_index);
-		} else if (gltf_node->camera >= 0) {
-			current_node = _generate_camera(state, scene_parent, node_index);
-		} else if (gltf_node->light >= 0) {
-			current_node = _generate_light(state, scene_parent, node_index);
-		} else {
-			current_node = _generate_spatial(state, scene_parent, node_index);
-		}
+	if (gltf_node->mesh >= 0) {
+		current_node = _generate_mesh_instance(state, scene_parent, node_index);
+	} else if (gltf_node->camera >= 0) {
+		current_node = _generate_camera(state, scene_parent, node_index);
+	} else if (gltf_node->light >= 0) {
+		current_node = _generate_light(state, scene_parent, node_index);
+	} else {
+		current_node = _generate_spatial(state, scene_parent, node_index);
+	}
 
-		scene_parent->add_child(current_node);
-		current_node->set_owner(scene_root);
-		current_node->set_transform(gltf_node->xform);
+	scene_parent->add_child(current_node);
+	current_node->set_owner(scene_root);
+	current_node->set_transform(gltf_node->xform);
+	if (state.use_legacy_names) {
+		current_node->set_name(_legacy_validate_node_name(gltf_node->name));
+	} else {
 		current_node->set_name(gltf_node->name);
 	}
 
@@ -2817,6 +2775,88 @@ void EditorSceneImporterGLTF::_generate_scene_node(GLTFState &state, Node *scene
 
 	for (int i = 0; i < gltf_node->children.size(); ++i) {
 		_generate_scene_node(state, current_node, scene_root, gltf_node->children[i]);
+	}
+}
+
+void EditorSceneImporterGLTF::_generate_skeleton_bone_node(GLTFState &state, Node *scene_parent, Spatial *scene_root, const GLTFNodeIndex node_index) {
+	const GLTFNode *gltf_node = state.nodes[node_index];
+
+	Spatial *current_node = nullptr;
+
+	Skeleton *skeleton = state.skeletons[gltf_node->skeleton].godot_skeleton;
+	// In this case, this node is already a bone in skeleton.
+	const bool is_skinned_mesh = (gltf_node->skin >= 0 && gltf_node->mesh >= 0);
+	const bool requires_extra_node = (gltf_node->mesh >= 0 || gltf_node->camera >= 0 || gltf_node->light >= 0);
+
+	Skeleton *active_skeleton = Object::cast_to<Skeleton>(scene_parent);
+	if (active_skeleton != skeleton) {
+		if (active_skeleton) {
+			// Bone Attachment - Direct Parented Skeleton Case
+			BoneAttachment *bone_attachment = _generate_bone_attachment(state, active_skeleton, node_index, gltf_node->parent);
+
+			scene_parent->add_child(bone_attachment);
+			bone_attachment->set_owner(scene_root);
+
+			// There is no gltf_node that represent this, so just directly create a unique name
+			bone_attachment->set_name(_gen_unique_name(state, "BoneAttachment"));
+
+			// We change the scene_parent to our bone attachment now. We do not set current_node because we want to make the node
+			// and attach it to the bone_attachment
+			scene_parent = bone_attachment;
+			WARN_PRINT(vformat("glTF: Generating scene detected direct parented Skeletons at node %d", node_index));
+		}
+
+		// Add it to the scene if it has not already been added
+		if (skeleton->get_parent() == nullptr) {
+			scene_parent->add_child(skeleton);
+			skeleton->set_owner(scene_root);
+		}
+	}
+
+	active_skeleton = skeleton;
+	current_node = skeleton;
+
+	// If we have an active skeleton, and the node is node skinned, we need to create a bone attachment
+	if (requires_extra_node) {
+		// skinned meshes must not be placed in a bone attachment.
+		if (!is_skinned_mesh) {
+			BoneAttachment *bone_attachment = _generate_bone_attachment(state, active_skeleton, node_index, node_index);
+
+			scene_parent->add_child(bone_attachment);
+			bone_attachment->set_owner(scene_root);
+
+			// There is no gltf_node that represent this, so just directly create a unique name
+			bone_attachment->set_name(_gen_unique_name(state, "BoneAttachment"));
+
+			// We change the scene_parent to our bone attachment now. We do not set current_node because we want to make the node
+			// and attach it to the bone_attachment
+			scene_parent = bone_attachment;
+			current_node = nullptr;
+		}
+
+		// We still have not managed to make a node
+		if (gltf_node->mesh >= 0) {
+			current_node = _generate_mesh_instance(state, scene_parent, node_index);
+		} else if (gltf_node->camera >= 0) {
+			current_node = _generate_camera(state, scene_parent, node_index);
+		} else if (gltf_node->light >= 0) {
+			current_node = _generate_light(state, scene_parent, node_index);
+		}
+
+		scene_parent->add_child(current_node);
+		current_node->set_owner(scene_root);
+		// Do not set transform here. Transform is already applied to our bone.
+		if (state.use_legacy_names) {
+			current_node->set_name(_legacy_validate_node_name(gltf_node->name));
+		} else {
+			current_node->set_name(gltf_node->name);
+		}
+	}
+
+	state.scene_nodes.insert(node_index, current_node);
+
+	for (int i = 0; i < gltf_node->children.size(); ++i) {
+		_generate_scene_node(state, active_skeleton, scene_root, gltf_node->children[i]);
 	}
 }
 
@@ -2971,26 +3011,30 @@ void EditorSceneImporterGLTF::_import_animation(GLTFState &state, AnimationPlaye
 	for (Map<int, GLTFAnimation::Track>::Element *E = anim.tracks.front(); E; E = E->next()) {
 
 		const GLTFAnimation::Track &track = E->get();
-		//need to find the path
+		//need to find the path: for skeletons, weight tracks will affect the mesh
 		NodePath node_path;
+		//for skeletons, transform tracks always affect bones
+		NodePath transform_node_path;
 
 		GLTFNodeIndex node_index = E->key();
-		if (state.nodes[node_index]->fake_joint_parent >= 0) {
-			// Should be same as parent
-			node_index = state.nodes[node_index]->fake_joint_parent;
-		}
 
 		const GLTFNode *node = state.nodes[E->key()];
 
+		Node *root = ap->get_parent();
+		ERR_FAIL_COND(root == nullptr);
+		Map<GLTFNodeIndex, Node *>::Element *node_element = state.scene_nodes.find(node_index);
+		ERR_CONTINUE_MSG(node_element == nullptr, vformat("Unable to find node %d for animation", node_index));
+		node_path = root->get_path_to(node_element->get());
+
 		if (node->skeleton >= 0) {
-			const Skeleton *sk = Object::cast_to<Skeleton>(state.scene_nodes.find(node_index)->get());
+			const Skeleton *sk = state.skeletons[node->skeleton].godot_skeleton;
 			ERR_FAIL_COND(sk == nullptr);
 
 			const String path = ap->get_parent()->get_path_to(sk);
 			const String bone = node->name;
-			node_path = path + ":" + bone;
+			transform_node_path = path + ":" + bone;
 		} else {
-			node_path = ap->get_parent()->get_path_to(state.scene_nodes.find(node_index)->get());
+			transform_node_path = node_path;
 		}
 
 		for (int i = 0; i < track.rotation_track.times.size(); i++) {
@@ -3009,16 +3053,18 @@ void EditorSceneImporterGLTF::_import_animation(GLTFState &state, AnimationPlaye
 			}
 		}
 
-		if (track.rotation_track.values.size() || track.translation_track.values.size() || track.scale_track.values.size()) {
+		// Animated TRS properties will not affect a skinned mesh.
+		const bool transform_affects_skinned_mesh_instance = node->skeleton < 0 && node->skin >= 0;
+		if ((track.rotation_track.values.size() || track.translation_track.values.size() || track.scale_track.values.size()) && !transform_affects_skinned_mesh_instance) {
 			//make transform track
 			int track_idx = animation->get_track_count();
 			animation->add_track(Animation::TYPE_TRANSFORM);
-			animation->track_set_path(track_idx, node_path);
+			animation->track_set_path(track_idx, transform_node_path);
 			animation->track_set_imported(track_idx, true);
 			//first determine animation length
 
-			const float increment = 1.0 / float(bake_fps);
-			float time = 0.0;
+			const double increment = 1.0 / bake_fps;
+			double time = 0.0;
 
 			Vector3 base_pos;
 			Quat base_rot;
@@ -3107,8 +3153,8 @@ void EditorSceneImporterGLTF::_import_animation(GLTFState &state, AnimationPlaye
 				}
 			} else {
 				// CATMULLROMSPLINE or CUBIC_SPLINE have to be baked, apologies.
-				const float increment = 1.0 / float(bake_fps);
-				float time = 0.0;
+				const double increment = 1.0 / bake_fps;
+				double time = 0.0;
 				bool last = false;
 				while (true) {
 					_interpolate_track<float>(track.weight_tracks[i].times, track.weight_tracks[i].values, time, gltf_interp);
@@ -3138,13 +3184,15 @@ void EditorSceneImporterGLTF::_process_mesh_instances(GLTFState &state, Spatial 
 			const GLTFSkinIndex skin_i = node->skin;
 
 			Map<GLTFNodeIndex, Node *>::Element *mi_element = state.scene_nodes.find(node_i);
+			ERR_CONTINUE_MSG(mi_element == nullptr, vformat("Unable to find node %d", node_i));
+
 			MeshInstance *mi = Object::cast_to<MeshInstance>(mi_element->get());
-			ERR_FAIL_COND(mi == nullptr);
+			ERR_CONTINUE_MSG(mi == nullptr, vformat("Unable to cast node %d of type %s to MeshInstance", node_i, mi_element->get()->get_class_name()));
 
 			const GLTFSkeletonIndex skel_i = state.skins[node->skin].skeleton;
 			const GLTFSkeleton &gltf_skeleton = state.skeletons[skel_i];
 			Skeleton *skeleton = gltf_skeleton.godot_skeleton;
-			ERR_FAIL_COND(skeleton == nullptr);
+			ERR_CONTINUE_MSG(skeleton == nullptr, vformat("Unable to find Skeleton for node %d skin %d", node_i, skin_i));
 
 			mi->get_parent()->remove_child(mi);
 			skeleton->add_child(mi);
@@ -3162,7 +3210,11 @@ Spatial *EditorSceneImporterGLTF::_generate_scene(GLTFState &state, const int p_
 	Spatial *root = memnew(Spatial);
 
 	// scene_name is already unique
-	root->set_name(state.scene_name);
+	if (state.use_legacy_names) {
+		root->set_name(_legacy_validate_node_name(state.scene_name));
+	} else {
+		root->set_name(state.scene_name);
+	}
 
 	for (int i = 0; i < state.root_nodes.size(); ++i) {
 		_generate_scene_node(state, root, root, state.root_nodes[i]);
@@ -3216,6 +3268,7 @@ Node *EditorSceneImporterGLTF::import_scene(const String &p_path, uint32_t p_fla
 	state.major_version = version.get_slice(".", 0).to_int();
 	state.minor_version = version.get_slice(".", 1).to_int();
 	state.use_named_skin_binds = p_flags & IMPORT_USE_NAMED_SKIN_BINDS;
+	state.use_legacy_names = p_flags & IMPORT_USE_LEGACY_NAMES;
 
 	/* STEP 0 PARSE SCENE */
 	Error err = _parse_scenes(state);

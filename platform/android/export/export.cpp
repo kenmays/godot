@@ -201,8 +201,10 @@ static const char *android_perms[] = {
 	NULL
 };
 
-static const char *SPLASH_IMAGE_EXPORT_PATH = "res/drawable/splash.png";
-static const char *SPLASH_BG_COLOR_PATH = "res/drawable/splash_bg_color.png";
+static const char *SPLASH_IMAGE_EXPORT_PATH = "res/drawable-nodpi/splash.png";
+static const char *LEGACY_BUILD_SPLASH_IMAGE_EXPORT_PATH = "res/drawable-nodpi-v4/splash.png";
+static const char *SPLASH_BG_COLOR_PATH = "res/drawable-nodpi/splash_bg_color.png";
+static const char *LEGACY_BUILD_SPLASH_BG_COLOR_PATH = "res/drawable-nodpi-v4/splash_bg_color.png";
 static const char *SPLASH_CONFIG_PATH = "res://android/build/res/drawable/splash_drawable.xml";
 
 const String SPLASH_CONFIG_XML_CONTENT = R"SPLASH(<?xml version="1.0" encoding="utf-8"?>
@@ -210,7 +212,7 @@ const String SPLASH_CONFIG_XML_CONTENT = R"SPLASH(<?xml version="1.0" encoding="
 	<item android:drawable="@drawable/splash_bg_color" />
 	<item>
 		<bitmap
-				android:gravity="%s"
+				android:gravity="center"
 				android:filter="%s"
 				android:src="@drawable/splash" />
 	</item>
@@ -766,6 +768,10 @@ class EditorExportPlatformAndroid : public EditorExportPlatform {
 		return OK;
 	}
 
+	bool _has_storage_permission(const Vector<String> &p_permissions) {
+		return p_permissions.find("android.permission.READ_EXTERNAL_STORAGE") != -1 || p_permissions.find("android.permission.WRITE_EXTERNAL_STORAGE") != -1;
+	}
+
 	void _get_permissions(const Ref<EditorExportPreset> &p_preset, bool p_give_internet, Vector<String> &r_permissions) {
 		const char **aperms = android_perms;
 		while (*aperms) {
@@ -817,7 +823,7 @@ class EditorExportPlatformAndroid : public EditorExportPlatform {
 
 		manifest_text += _get_xr_features_tag(p_preset);
 		manifest_text += _get_instrumentation_tag(p_preset);
-		manifest_text += _get_application_tag(p_preset);
+		manifest_text += _get_application_tag(p_preset, _has_storage_permission(perms));
 		manifest_text += "</manifest>\n";
 		String manifest_path = vformat("res://android/build/src/%s/AndroidManifest.xml", (p_debug ? "debug" : "release"));
 
@@ -856,7 +862,8 @@ class EditorExportPlatformAndroid : public EditorExportPlatform {
 		int version_code = p_preset->get("version/code");
 		String package_name = p_preset->get("package/unique_name");
 
-		const int screen_orientation = _get_android_orientation_value(_get_screen_orientation());
+		const int screen_orientation = _get_android_orientation_value(
+				OS::get_singleton()->get_screen_orientation_from_string(GLOBAL_GET("display/window/handheld/orientation")));
 
 		bool min_gles3 = ProjectSettings::get_singleton()->get("rendering/quality/driver/driver_name") == "GLES3" &&
 						 !ProjectSettings::get_singleton()->get("rendering/quality/driver/fallback_to_gles2");
@@ -871,6 +878,7 @@ class EditorExportPlatformAndroid : public EditorExportPlatform {
 		Vector<String> perms;
 		// Write permissions into the perms variable.
 		_get_permissions(p_preset, p_give_internet, perms);
+		bool has_storage_permission = _has_storage_permission(perms);
 
 		while (ofs < (uint32_t)p_manifest.size()) {
 
@@ -966,6 +974,11 @@ class EditorExportPlatformAndroid : public EditorExportPlatform {
 								string_table.write[attr_value] = version_name;
 						}
 
+						if (tname == "application" && attrname == "requestLegacyExternalStorage") {
+
+							encode_uint32(has_storage_permission ? 0xFFFFFFFF : 0, &p_manifest.write[iofs + 16]);
+						}
+
 						if (tname == "instrumentation" && attrname == "targetPackage") {
 							string_table.write[attr_value] = get_package_name(package_name);
 						}
@@ -1000,8 +1013,6 @@ class EditorExportPlatformAndroid : public EditorExportPlatform {
 							encode_uint32(min_gles3 ? 0x00030000 : 0x00020000, &p_manifest.write[iofs + 16]);
 						}
 
-						// FIXME: `attr_value != 0xFFFFFFFF` below added as a stopgap measure for GH-32553,
-						// but the issue should be debugged further and properly addressed.
 						if (tname == "meta-data" && attrname == "name" && value == "xr_mode_metadata_name") {
 							// Update the meta-data 'android:name' attribute based on the selected XR mode.
 							if (xr_mode_index == 1 /* XRMode.OVR */) {
@@ -1537,6 +1548,21 @@ class EditorExportPlatformAndroid : public EditorExportPlatform {
 			splash_image = Ref<Image>(memnew(Image(boot_splash_png)));
 		}
 
+		if (scale_splash) {
+			Size2 screen_size = Size2(ProjectSettings::get_singleton()->get("display/window/size/width"), ProjectSettings::get_singleton()->get("display/window/size/height"));
+			int width, height;
+			if (screen_size.width > screen_size.height) {
+				// scale horizontally
+				height = screen_size.height;
+				width = splash_image->get_width() * screen_size.height / splash_image->get_height();
+			} else {
+				// scale vertically
+				width = screen_size.width;
+				height = splash_image->get_height() * screen_size.width / splash_image->get_width();
+			}
+			splash_image->resize(width, height);
+		}
+
 		// Setup the splash bg color
 		bool bg_color_valid;
 		Color bg_color = ProjectSettings::get_singleton()->get("application/boot_splash/bg_color", &bg_color_valid);
@@ -1549,8 +1575,7 @@ class EditorExportPlatformAndroid : public EditorExportPlatform {
 		splash_bg_color_image->create(splash_image->get_width(), splash_image->get_height(), false, splash_image->get_format());
 		splash_bg_color_image->fill(bg_color);
 
-		String gravity = scale_splash ? "fill" : "center";
-		String processed_splash_config_xml = vformat(SPLASH_CONFIG_XML_CONTENT, gravity, bool_to_string(apply_filter));
+		String processed_splash_config_xml = vformat(SPLASH_CONFIG_XML_CONTENT, bool_to_string(apply_filter));
 		return processed_splash_config_xml;
 	}
 
@@ -1853,7 +1878,7 @@ public:
 		if (use_reverse)
 			p_debug_flags |= DEBUG_FLAG_REMOTE_DEBUG_LOCALHOST;
 
-		String tmp_export_path = EditorSettings::get_singleton()->get_cache_dir().plus_file("tmpexport.apk");
+		String tmp_export_path = EditorSettings::get_singleton()->get_cache_dir().plus_file("tmpexport." + uitos(OS::get_singleton()->get_unix_time()) + ".apk");
 
 #define CLEANUP_AND_RETURN(m_err)                         \
 	{                                                     \
@@ -1871,6 +1896,7 @@ public:
 
 		List<String> args;
 		int rv;
+		String output;
 
 		bool remove_prev = p_preset->get("one_click_deploy/clear_previous_install");
 		String version_name = p_preset->get("version/name");
@@ -1888,7 +1914,9 @@ public:
 			args.push_back("uninstall");
 			args.push_back(get_package_name(package_name));
 
-			err = OS::get_singleton()->execute(adb, args, true, NULL, NULL, &rv);
+			output.clear();
+			err = OS::get_singleton()->execute(adb, args, true, NULL, &output, &rv, true);
+			print_verbose(output);
 		}
 
 		print_line("Installing to device (please wait...): " + devices[p_device].name);
@@ -1903,7 +1931,9 @@ public:
 		args.push_back("-r");
 		args.push_back(tmp_export_path);
 
-		err = OS::get_singleton()->execute(adb, args, true, NULL, NULL, &rv);
+		output.clear();
+		err = OS::get_singleton()->execute(adb, args, true, NULL, &output, &rv, true);
+		print_verbose(output);
 		if (err || rv != 0) {
 			EditorNode::add_io_error("Could not install to device.");
 			CLEANUP_AND_RETURN(ERR_CANT_CREATE);
@@ -1921,7 +1951,9 @@ public:
 				args.push_back(devices[p_device].id);
 				args.push_back("reverse");
 				args.push_back("--remove-all");
-				OS::get_singleton()->execute(adb, args, true, NULL, NULL, &rv);
+				output.clear();
+				OS::get_singleton()->execute(adb, args, true, NULL, &output, &rv, true);
+				print_verbose(output);
 
 				if (p_debug_flags & DEBUG_FLAG_REMOTE_DEBUG) {
 
@@ -1933,7 +1965,9 @@ public:
 					args.push_back("tcp:" + itos(dbg_port));
 					args.push_back("tcp:" + itos(dbg_port));
 
-					OS::get_singleton()->execute(adb, args, true, NULL, NULL, &rv);
+					output.clear();
+					OS::get_singleton()->execute(adb, args, true, NULL, &output, &rv, true);
+					print_verbose(output);
 					print_line("Reverse result: " + itos(rv));
 				}
 
@@ -1948,7 +1982,9 @@ public:
 					args.push_back("tcp:" + itos(fs_port));
 					args.push_back("tcp:" + itos(fs_port));
 
-					err = OS::get_singleton()->execute(adb, args, true, NULL, NULL, &rv);
+					output.clear();
+					err = OS::get_singleton()->execute(adb, args, true, NULL, &output, &rv, true);
+					print_verbose(output);
 					print_line("Reverse result2: " + itos(rv));
 				}
 			} else {
@@ -1977,7 +2013,9 @@ public:
 		args.push_back("-n");
 		args.push_back(get_package_name(package_name) + "/com.godot.game.GodotApp");
 
-		err = OS::get_singleton()->execute(adb, args, true, NULL, NULL, &rv);
+		output.clear();
+		err = OS::get_singleton()->execute(adb, args, true, NULL, &output, &rv, true);
+		print_verbose(output);
 		if (err || rv != 0) {
 			EditorNode::add_io_error("Could not execute on device.");
 			CLEANUP_AND_RETURN(ERR_CANT_CREATE);
@@ -2091,6 +2129,13 @@ public:
 		// Validate the rest of the configuration.
 
 		String dk = p_preset->get("keystore/debug");
+		String dk_user = p_preset->get("keystore/debug_user");
+		String dk_password = p_preset->get("keystore/debug_password");
+
+		if ((dk.empty() || dk_user.empty() || dk_password.empty()) && (!dk.empty() || !dk_user.empty() || !dk_password.empty())) {
+			valid = false;
+			err += TTR("Either Debug Keystore, Debug User AND Debug Password settings must be configured OR none of them.") + "\n";
+		}
 
 		if (!FileAccess::exists(dk)) {
 
@@ -2102,6 +2147,13 @@ public:
 		}
 
 		String rk = p_preset->get("keystore/release");
+		String rk_user = p_preset->get("keystore/release_user");
+		String rk_password = p_preset->get("keystore/release_password");
+
+		if ((rk.empty() || rk_user.empty() || rk_password.empty()) && (!rk.empty() || !rk_user.empty() || !rk_password.empty())) {
+			valid = false;
+			err += TTR("Either Release Keystore, Release User AND Release Password settings must be configured OR none of them.") + "\n";
+		}
 
 		if (!rk.empty() && !FileAccess::exists(rk)) {
 			valid = false;
@@ -2677,6 +2729,7 @@ public:
 			return ERR_FILE_CANT_OPEN;
 		}
 
+		String output;
 		List<String> args;
 		args.push_back("sign");
 		args.push_back("--verbose");
@@ -2692,7 +2745,9 @@ public:
 			print_verbose("Signing debug binary using: " + String("\n") + apksigner + " " + join_list(args, String(" ")));
 		}
 		int retval;
-		OS::get_singleton()->execute(apksigner, args, true, NULL, NULL, &retval);
+		output.clear();
+		OS::get_singleton()->execute(apksigner, args, true, NULL, &output, &retval, true);
+		print_verbose(output);
 		if (retval) {
 			EditorNode::add_io_error("'apksigner' returned with error #" + itos(retval));
 			return ERR_CANT_CREATE;
@@ -2710,7 +2765,9 @@ public:
 			print_verbose("Verifying signed build using: " + String("\n") + apksigner + " " + join_list(args, String(" ")));
 		}
 
-		OS::get_singleton()->execute(apksigner, args, true, NULL, NULL, &retval);
+		output.clear();
+		OS::get_singleton()->execute(apksigner, args, true, NULL, &output, &retval, true);
+		print_verbose(output);
 		if (retval) {
 			EditorNode::add_io_error("'apksigner' verification of " + export_label + " failed.");
 			return ERR_CANT_CREATE;
@@ -3016,7 +3073,7 @@ public:
 		FileAccess *dst_f = NULL;
 		io2.opaque = &dst_f;
 
-		String tmp_unaligned_path = EditorSettings::get_singleton()->get_cache_dir().plus_file("tmpexport-unaligned.apk");
+		String tmp_unaligned_path = EditorSettings::get_singleton()->get_cache_dir().plus_file("tmpexport-unaligned." + uitos(OS::get_singleton()->get_unix_time()) + ".apk");
 
 #define CLEANUP_AND_RETURN(m_err)                            \
 	{                                                        \
@@ -3062,12 +3119,12 @@ public:
 			}
 
 			// Process the splash image
-			if (file == SPLASH_IMAGE_EXPORT_PATH && splash_image.is_valid() && !splash_image->empty()) {
+			if ((file == SPLASH_IMAGE_EXPORT_PATH || file == LEGACY_BUILD_SPLASH_IMAGE_EXPORT_PATH) && splash_image.is_valid() && !splash_image->empty()) {
 				_load_image_data(splash_image, data);
 			}
 
 			// Process the splash bg color image
-			if (file == SPLASH_BG_COLOR_PATH && splash_bg_color_image.is_valid() && !splash_bg_color_image->empty()) {
+			if ((file == SPLASH_BG_COLOR_PATH || file == LEGACY_BUILD_SPLASH_BG_COLOR_PATH) && splash_bg_color_image.is_valid() && !splash_bg_color_image->empty()) {
 				_load_image_data(splash_bg_color_image, data);
 			}
 

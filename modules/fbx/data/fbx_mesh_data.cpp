@@ -418,6 +418,7 @@ void FBXMeshData::sanitize_vertex_weights(const ImportState &state) {
 
 	int bind_id = 0;
 	for (const FBXDocParser::Cluster *cluster : fbx_skin->Clusters()) {
+		ERR_CONTINUE_MSG(!state.fbx_bone_map.has(cluster->TargetNode()->ID()), "Missing bone map for cluster target node with id " + uitos(cluster->TargetNode()->ID()) + ".");
 		Ref<FBXBone> bone = state.fbx_bone_map[cluster->TargetNode()->ID()];
 		skeleton_to_skin_bind_id.insert(bone->godot_bone_id, bind_id);
 		bind_id++;
@@ -958,7 +959,7 @@ void FBXMeshData::triangulate_polygon(Ref<SurfaceTool> st, Vector<int> p_polygon
 		for (List<TriangulatorPoly>::Element *I = out_poly.front(); I; I = I->next()) {
 			TriangulatorPoly &tp = I->get();
 
-			ERR_FAIL_COND_MSG(tp.GetNumPoints() != 3, "The triangulator retuned more points, how this is possible?");
+			ERR_FAIL_COND_MSG(tp.GetNumPoints() != 3, "The triangulator returned more points, how this is possible?");
 			// Find Index
 			for (int i = 2; i >= 0; i -= 1) {
 				const Vector2 vertex = tp.GetPoint(i);

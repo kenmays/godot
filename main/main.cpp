@@ -1196,10 +1196,10 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	}
 
 	Engine::get_singleton()->set_iterations_per_second(GLOBAL_DEF("physics/common/physics_fps", 60));
-	ProjectSettings::get_singleton()->set_custom_property_info("physics/common/physics_fps", PropertyInfo(Variant::INT, "physics/common/physics_fps", PROPERTY_HINT_RANGE, "1,120,1,or_greater"));
+	ProjectSettings::get_singleton()->set_custom_property_info("physics/common/physics_fps", PropertyInfo(Variant::INT, "physics/common/physics_fps", PROPERTY_HINT_RANGE, "1,1000,1"));
 	Engine::get_singleton()->set_physics_jitter_fix(GLOBAL_DEF("physics/common/physics_jitter_fix", 0.5));
 	Engine::get_singleton()->set_target_fps(GLOBAL_DEF("debug/settings/fps/force_fps", 0));
-	ProjectSettings::get_singleton()->set_custom_property_info("debug/settings/fps/force_fps", PropertyInfo(Variant::INT, "debug/settings/fps/force_fps", PROPERTY_HINT_RANGE, "0,120,1,or_greater"));
+	ProjectSettings::get_singleton()->set_custom_property_info("debug/settings/fps/force_fps", PropertyInfo(Variant::INT, "debug/settings/fps/force_fps", PROPERTY_HINT_RANGE, "0,1000,1"));
 	GLOBAL_DEF("physics/common/enable_pause_aware_picking", false);
 
 	GLOBAL_DEF("debug/settings/stdout/print_fps", false);
@@ -1354,7 +1354,13 @@ Error Main::setup2(Thread::ID p_main_tid_override) {
 				ERR_PRINTS("Non-existing or invalid boot splash at '" + boot_logo_path + "'. Loading default splash.");
 		}
 
-		Color boot_bg_color = GLOBAL_DEF("application/boot_splash/bg_color", boot_splash_bg_color);
+#if defined(TOOLS_ENABLED) && !defined(NO_EDITOR_SPLASH)
+		const Color boot_bg_color =
+				GLOBAL_DEF("application/boot_splash/bg_color",
+						(editor || project_manager) ? boot_splash_editor_bg_color : boot_splash_bg_color);
+#else
+		const Color boot_bg_color = GLOBAL_DEF("application/boot_splash/bg_color", boot_splash_bg_color);
+#endif
 		if (boot_logo.is_valid()) {
 			OS::get_singleton()->_msec_splash = OS::get_singleton()->get_ticks_msec();
 			VisualServer::get_singleton()->set_boot_image(boot_logo, boot_bg_color, boot_logo_scale, boot_logo_filter);
@@ -2159,10 +2165,10 @@ bool Main::iteration() {
 
 		if (editor || project_manager) {
 			if (print_fps) {
-				print_line("Editor FPS: " + itos(frames));
+				print_line(vformat("Editor FPS: %d (%s mspf)", frames, rtos(1000.0 / frames).pad_decimals(1)));
 			}
 		} else if (GLOBAL_GET("debug/settings/stdout/print_fps") || print_fps) {
-			print_line("Game FPS: " + itos(frames));
+			print_line(vformat("Project FPS: %d (%s mspf)", frames, rtos(1000.0 / frames).pad_decimals(1)));
 		}
 
 		Engine::get_singleton()->_fps = frames;

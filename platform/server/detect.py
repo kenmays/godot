@@ -55,7 +55,7 @@ def configure(env):
     if env["target"] == "release":
         if env["optimize"] == "speed":  # optimize for speed (default)
             env.Prepend(CCFLAGS=["-O3"])
-        else:  # optimize for size
+        elif env["optimize"] == "size":  # optimize for size
             env.Prepend(CCFLAGS=["-Os"])
 
         if env["debug_symbols"]:
@@ -64,7 +64,7 @@ def configure(env):
     elif env["target"] == "release_debug":
         if env["optimize"] == "speed":  # optimize for speed (default)
             env.Prepend(CCFLAGS=["-O2"])
-        else:  # optimize for size
+        elif env["optimize"] == "size":  # optimize for size
             env.Prepend(CCFLAGS=["-Os"])
         env.Prepend(CPPDEFINES=["DEBUG_ENABLED"])
 
@@ -221,6 +221,13 @@ def configure(env):
     # 16-bit library shouldn't be required due to compiler optimisations
     if not env["builtin_pcre2"]:
         env.ParseConfig("pkg-config libpcre2-32 --cflags --libs")
+
+    # Embree is only compatible with x86_64. Yet another unreliable hack that will break
+    # cross-compilation, this will really need to be handle better. Thankfully only affects
+    # people who disable builtin_embree (likely distro packagers).
+    if env["tools"] and not env["builtin_embree"] and (is64 and platform.machine() == "x86_64"):
+        # No pkgconfig file so far, hardcode expected lib name.
+        env.Append(LIBS=["embree3"])
 
     ## Flags
 

@@ -295,7 +295,7 @@ void RasterizerCanvasGLES2::_batch_render_generic(const Batch &p_batch, Rasteriz
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 
-void RasterizerCanvasGLES2::render_batches(Item::Command *const *p_commands, Item *p_current_clip, bool &r_reclip, RasterizerStorageGLES2::Material *p_material) {
+void RasterizerCanvasGLES2::render_batches(Item *p_current_clip, bool &r_reclip, RasterizerStorageGLES2::Material *p_material) {
 
 	int num_batches = bdata.batches.size();
 
@@ -318,9 +318,12 @@ void RasterizerCanvasGLES2::render_batches(Item::Command *const *p_commands, Ite
 			default: {
 				int end_command = batch.first_command + batch.num_commands;
 
+				RAST_DEV_DEBUG_ASSERT(batch.item);
+				RasterizerCanvas::Item::Command *const *commands = batch.item->commands.ptr();
+
 				for (int i = batch.first_command; i < end_command; i++) {
 
-					Item::Command *command = p_commands[i];
+					Item::Command *command = commands[i];
 
 					switch (command->type) {
 
@@ -1353,6 +1356,12 @@ bool RasterizerCanvasGLES2::try_join_item(Item *p_ci, RenderItemState &r_ris, bo
 		if (material_ptr) {
 			shader_ptr = material_ptr->shader;
 
+			// special case, if the user has made an error in the shader code
+			if (shader_ptr && !shader_ptr->valid) {
+				join = false;
+				r_batch_break = true;
+			}
+
 			if (shader_ptr && shader_ptr->mode != VS::SHADER_CANVAS_ITEM) {
 				shader_ptr = NULL; // not a canvas item shader, don't use.
 			}
@@ -2171,7 +2180,7 @@ void RasterizerCanvasGLES2::render_joined_item(const BItemJoined &p_bij, RenderI
 	// using software transform?
 	// (i.e. don't send the transform matrix, send identity, and either use baked verts,
 	// or large fvf where the transform is done in the shader from transform stored in the fvf.)
-	if (!p_bij.use_hardware_transform()) {
+	if (!p_bij.is_single_item()) {
 		state.uniforms.modelview_matrix = Transform2D();
 		// final_modulate will be baked per item ref so the final_modulate can be an identity color
 		state.uniforms.final_modulate = Color(1, 1, 1, 1);
@@ -2185,7 +2194,7 @@ void RasterizerCanvasGLES2::render_joined_item(const BItemJoined &p_bij, RenderI
 	_set_uniforms();
 
 	if (unshaded || (state.uniforms.final_modulate.a > 0.001 && (!r_ris.shader_cache || r_ris.shader_cache->canvas_item.light_mode != RasterizerStorageGLES2::Shader::CanvasItem::LIGHT_MODE_LIGHT_ONLY) && !ci->light_masked))
-		render_joined_item_commands(p_bij, NULL, reclip, material_ptr, false);
+		render_joined_item_commands(p_bij, NULL, reclip, material_ptr, false, r_ris);
 
 	r_ris.rebind_shader = true; // hacked in for now.
 
@@ -2196,7 +2205,7 @@ void RasterizerCanvasGLES2::render_joined_item(const BItemJoined &p_bij, RenderI
 		VS::CanvasLightMode mode = VS::CANVAS_LIGHT_MODE_ADD;
 
 		// we leave this set to 1, 1, 1, 1 if using software because the colors are baked into the vertices
-		if (p_bij.use_hardware_transform()) {
+		if (p_bij.is_single_item()) {
 			state.uniforms.final_modulate = ci->final_modulate; // remove the canvas modulate
 		}
 
@@ -2279,10 +2288,10 @@ void RasterizerCanvasGLES2::render_joined_item(const BItemJoined &p_bij, RenderI
 				// this can greatly reduce fill rate ..
 				// at the cost of glScissor commands, so is optional
 				if (!bdata.settings_scissor_lights || r_ris.current_clip) {
-					render_joined_item_commands(p_bij, NULL, reclip, material_ptr, true);
+					render_joined_item_commands(p_bij, NULL, reclip, material_ptr, true, r_ris);
 				} else {
 					bool scissor = _light_scissor_begin(p_bij.bounding_rect, light->xform_cache, light->rect_cache);
-					render_joined_item_commands(p_bij, NULL, reclip, material_ptr, true);
+					render_joined_item_commands(p_bij, NULL, reclip, material_ptr, true, r_ris);
 					if (scissor) {
 						glDisable(GL_SCISSOR_TEST);
 					}

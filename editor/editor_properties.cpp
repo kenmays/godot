@@ -981,8 +981,7 @@ void EditorPropertyEasing::_drag_easing(const Ref<InputEvent> &p_ev) {
 
 	const Ref<InputEventMouseMotion> mm = p_ev;
 
-	if (mm.is_valid() && mm->get_button_mask() & BUTTON_MASK_LEFT) {
-
+	if (dragging && mm.is_valid() && mm->get_button_mask() & BUTTON_MASK_LEFT) {
 		float rel = mm->get_relative().x;
 		if (rel == 0)
 			return;
@@ -3022,6 +3021,8 @@ EditorPropertyResource::EditorPropertyResource() {
 	preview->set_margin(MARGIN_TOP, 1);
 	preview->set_margin(MARGIN_BOTTOM, -1);
 	preview->set_margin(MARGIN_RIGHT, -1);
+	// This is required to draw the focus outline in front of the preview, rather than behind.
+	preview->set_draw_behind_parent(true);
 	assign->add_child(preview);
 	assign->connect("gui_input", this, "_button_input");
 
@@ -3056,7 +3057,7 @@ void EditorInspectorDefaultPlugin::parse_begin(Object *p_object) {
 
 bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Type p_type, const String &p_path, PropertyHint p_hint, const String &p_hint_text, int p_usage) {
 
-	float default_float_step = EDITOR_GET("interface/inspector/default_float_step");
+	double default_float_step = EDITOR_GET("interface/inspector/default_float_step");
 
 	switch (p_type) {
 

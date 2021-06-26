@@ -385,7 +385,7 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("interface/theme/accent_color", Color(0.41, 0.61, 0.91));
 	hints["interface/theme/accent_color"] = PropertyInfo(Variant::COLOR, "interface/theme/accent_color", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT);
 	_initial_set("interface/theme/contrast", 0.25);
-	hints["interface/theme/contrast"] = PropertyInfo(Variant::REAL, "interface/theme/contrast", PROPERTY_HINT_RANGE, "0.01, 1, 0.01");
+	hints["interface/theme/contrast"] = PropertyInfo(Variant::REAL, "interface/theme/contrast", PROPERTY_HINT_RANGE, "-1, 1, 0.01");
 	_initial_set("interface/theme/relationship_line_opacity", 0.1);
 	hints["interface/theme/relationship_line_opacity"] = PropertyInfo(Variant::REAL, "interface/theme/relationship_line_opacity", PROPERTY_HINT_RANGE, "0.00, 1, 0.01");
 	_initial_set("interface/theme/highlight_tabs", false);
@@ -395,7 +395,7 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("interface/theme/additional_spacing", 0);
 	hints["interface/theme/additional_spacing"] = PropertyInfo(Variant::REAL, "interface/theme/additional_spacing", PROPERTY_HINT_RANGE, "0,5,0.1", PROPERTY_USAGE_DEFAULT);
 	_initial_set("interface/theme/custom_theme", "");
-	hints["interface/theme/custom_theme"] = PropertyInfo(Variant::STRING, "interface/theme/custom_theme", PROPERTY_HINT_GLOBAL_FILE, "*.res,*.tres,*.theme", PROPERTY_USAGE_DEFAULT);
+	hints["interface/theme/custom_theme"] = PropertyInfo(Variant::STRING, "interface/theme/custom_theme", PROPERTY_HINT_GLOBAL_FILE, "*.res,*.tres,*.theme", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_RESTART_IF_CHANGED);
 
 	// Scene tabs
 	_initial_set("interface/scene_tabs/show_extension", false);
@@ -553,8 +553,8 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	// is increased significantly more than it really should need to be.
 	hints["editors/3d/grid_division_level_max"] = PropertyInfo(Variant::INT, "editors/3d/grid_division_level_max", PROPERTY_HINT_RANGE, "-1,3,1", PROPERTY_USAGE_DEFAULT);
 
-	// Default smallest grid size is 1cm, 10^-2.
-	_initial_set("editors/3d/grid_division_level_min", -2);
+	// Default smallest grid size is 1m, 10^0.
+	_initial_set("editors/3d/grid_division_level_min", 0);
 	// Lower values produce graphical artifacts regardless of view clipping planes, so limit to -2 as a lower bound.
 	hints["editors/3d/grid_division_level_min"] = PropertyInfo(Variant::INT, "editors/3d/grid_division_level_min", PROPERTY_HINT_RANGE, "-2,2,1", PROPERTY_USAGE_DEFAULT);
 

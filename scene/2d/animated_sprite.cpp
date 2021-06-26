@@ -605,12 +605,11 @@ bool AnimatedSprite::_is_playing() const {
 }
 
 void AnimatedSprite::play(const StringName &p_animation, const bool p_backwards) {
-
 	backwards = p_backwards;
 
 	if (p_animation) {
 		set_animation(p_animation);
-		if (backwards && get_frame() == 0)
+		if (frames.is_valid() && backwards && get_frame() == 0)
 			set_frame(frames->get_frame_count(p_animation) - 1);
 	}
 

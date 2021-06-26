@@ -150,7 +150,7 @@ uint8_t FileAccessMemory::get_8() const {
 }
 
 int FileAccessMemory::get_buffer(uint8_t *p_dst, int p_length) const {
-	ERR_FAIL_COND_V(!p_dst, -1);
+	ERR_FAIL_COND_V(!p_dst && p_length > 0, -1);
 	ERR_FAIL_COND_V(p_length < 0, -1);
 	ERR_FAIL_COND_V(!data, -1);
 
@@ -184,7 +184,7 @@ void FileAccessMemory::store_8(uint8_t p_byte) {
 }
 
 void FileAccessMemory::store_buffer(const uint8_t *p_src, int p_length) {
-
+	ERR_FAIL_COND(!p_src && p_length > 0);
 	int left = length - pos;
 	int write = MIN(p_length, left);
 	if (write < p_length) {

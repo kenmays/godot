@@ -620,7 +620,6 @@ Error ProjectSettings::_load_settings_text_or_binary(const String &p_text_path, 
 	} else if (err != ERR_FILE_NOT_FOUND) {
 		// If the file exists but can't be loaded, we want to know it.
 		ERR_PRINT("Couldn't load file '" + p_bin_path + "', error code " + itos(err) + ".");
-		return err;
 	}
 
 	// Fallback to text-based project.godot file if binary was not found.
@@ -629,7 +628,6 @@ Error ProjectSettings::_load_settings_text_or_binary(const String &p_text_path, 
 		return OK;
 	} else if (err != ERR_FILE_NOT_FOUND) {
 		ERR_PRINT("Couldn't load file '" + p_text_path + "', error code " + itos(err) + ".");
-		return err;
 	}
 
 	return err;
@@ -692,8 +690,7 @@ Error ProjectSettings::_save_settings_binary(const String &p_file, const Map<Str
 		file->store_32(count + 1);
 		//store how many properties are saved, add one for custom featuers, which must always go first
 		String key = CoreStringNames::get_singleton()->_custom_features;
-		file->store_32(key.length());
-		file->store_string(key);
+		file->store_pascal_string(key);
 
 		int len;
 		err = encode_variant(p_custom_features, NULL, len, false);
@@ -730,8 +727,7 @@ Error ProjectSettings::_save_settings_binary(const String &p_file, const Map<Str
 			else
 				value = get(key);
 
-			file->store_32(key.length());
-			file->store_string(key);
+			file->store_pascal_string(key);
 
 			int len;
 			err = encode_variant(value, NULL, len, true);

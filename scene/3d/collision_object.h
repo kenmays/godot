@@ -47,7 +47,7 @@ class CollisionObject : public Spatial {
 		Object *owner;
 		Transform xform;
 		struct ShapeBase {
-			Node *debug_shape = nullptr;
+			RID debug_shape;
 			Ref<Shape> shape;
 			int index;
 		};
@@ -69,10 +69,16 @@ class CollisionObject : public Spatial {
 	bool ray_pickable;
 
 	Set<uint32_t> debug_shapes_to_update;
+	int debug_shapes_count = 0;
+	Transform debug_shape_old_transform;
 
 	void _update_pickable();
 
+	bool _are_collision_shapes_visible();
 	void _update_shape_data(uint32_t p_owner);
+	void _shape_changed(const Ref<Shape> &p_shape);
+	void _update_debug_shapes();
+	void _clear_debug_shapes();
 
 protected:
 	CollisionObject(RID p_rid, bool p_area);
@@ -84,7 +90,7 @@ protected:
 	virtual void _mouse_enter();
 	virtual void _mouse_exit();
 
-	void _update_debug_shapes();
+	void _on_transform_changed();
 
 public:
 	uint32_t create_shape_owner(Object *p_owner);

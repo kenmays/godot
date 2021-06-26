@@ -133,6 +133,11 @@ Copyright: 2018, Eric Lasota
  2018, Microsoft Corp.
 License: Expat
 
+Files: ./thirdparty/embree/
+Comment: Embree
+Copyright: 2009-2021 Intel Corporation
+License: Apache-2.0
+
 Files: ./thirdparty/enet/
 Comment: ENet
 Copyright: 2002-2020, Lee Salzman
@@ -237,7 +242,7 @@ License: CC0-1.0
 
 Files: ./thirdparty/miniupnpc/
 Comment: MiniUPnPc
-Copyright: 2005-2019, Thomas Bernard
+Copyright: 2005-2021, Thomas Bernard
 License: BSD-3-clause
 
 Files: ./thirdparty/minizip/
