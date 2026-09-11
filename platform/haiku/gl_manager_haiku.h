@@ -3,7 +3,6 @@
 
 #include <SupportDefs.h>
 
-class BWindow;
 class BGLView;
 
 class GLManagerHaiku {
@@ -15,6 +14,7 @@ public:
 	status_t make_current(BGLView *view);
 	void release_current(BGLView *view);
 	void swap_buffers(BGLView *view);
+	void *get_context(BGLView *view) const { return view; }
 
 	const char *version() const { return fVersion; }
 	const char *vendor() const { return fVendor; }
