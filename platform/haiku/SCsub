@@ -3,8 +3,6 @@
 Import("env")
 
 sources = [
-    "godot_haiku.cpp",
-    "libgodot_haiku.cpp",
     "os_haiku.cpp",
     "display_server_haiku.cpp",
     "haiku_window.cpp",
@@ -17,12 +15,18 @@ if env.get("HAIKU_AUDIO_ENABLED", False):
 
 objects = [env.Object("#platform/haiku/" + source) for source in sources]
 
+if env["library_type"] == "static":
+    objects.append(env.Object("#platform/haiku/libgodot_haiku.cpp"))
+elif env["library_type"] == "shared":
+    objects.append(env.Object("#platform/haiku/libgodot_haiku.cpp"))
+else:
+    objects.append(env.Object("#platform/haiku/godot_haiku.cpp"))
+
 if env.get("tools", False):
-    export_sources = [
-        "export/export_plugin.cpp",
-        "export/export.cpp",
+    objects += [
+        env.Object("#platform/haiku/export/export_plugin.cpp"),
+        env.Object("#platform/haiku/export/export.cpp"),
     ]
-    objects += [env.Object("#platform/haiku/" + source) for source in export_sources]
 
 if env["library_type"] == "static":
     env.add_library("#bin/libgodot", objects)
