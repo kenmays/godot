@@ -9,10 +9,16 @@ void AudioDriverHaiku::_play_buffer(void *cookie, void *buffer, size_t size, con
 void AudioDriverHaiku::_mix(void *buffer, size_t size, const media_raw_audio_format &format) {
 	if (!buffer || size == 0) return;
 	memset(buffer, 0, size);
-	const int bytes_per_sample = sizeof(float);
-	const int frames = (int)(size / (bytes_per_sample * channels));
-	if (active && frames > 0) {
-		audio_server_process(frames, reinterpret_cast<int32_t *>(buffer));
+	const int frames = (int)(size / (sizeof(float) * channels));
+	if (!active || frames <= 0) return;
+
+	Vector<int32_t> mix;
+	mix.resize(frames * channels);
+	audio_server_process(frames, mix.ptrw());
+	float *out = static_cast<float *>(buffer);
+	const int sample_count = frames * channels;
+	for (int i = 0; i < sample_count; i++) {
+		out[i] = (float)((double)mix[i] / 2147483648.0);
 	}
 }
 
