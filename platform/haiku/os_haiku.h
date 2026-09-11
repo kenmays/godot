@@ -3,10 +3,12 @@
 #include "drivers/unix/os_unix.h"
 
 class AudioDriverHaiku;
+class HaikuApplication;
 
 class OS_Haiku : public OS_Unix {
 	MainLoop *main_loop = nullptr;
 	AudioDriverHaiku *audio_driver = nullptr;
+	HaikuApplication *application = nullptr;
 
 protected:
 	void initialize() override;
@@ -29,6 +31,8 @@ public:
 	void alert(const String &p_alert, const String &p_title = "ALERT!") override;
 	void run();
 	void delete_main_loop();
+	void process_application_pulse();
+	void request_application_quit();
 
 	OS_Haiku();
 	~OS_Haiku() override;
