@@ -1,27 +1,33 @@
 #include "os_haiku.h"
 
 #include <FindDirectory.h>
-#include <Path.h>
-#include <Roster.h>
 #include <StorageKit.h>
 #include <sys/utsname.h>
 
 #include "audio_driver_haiku.h"
 #include "display_server_haiku.h"
+#include "haiku_application.h"
 #include "servers/audio/audio_driver.h"
 
 OS_Haiku::OS_Haiku() {
+	application = memnew(HaikuApplication(this));
 }
 
 OS_Haiku::~OS_Haiku() {
 	finalize();
+	if (application) {
+		memdelete(application);
+		application = nullptr;
+	}
 }
 
 void OS_Haiku::initialize() {
 	OS_Unix::initialize_core();
 	DisplayServerHaiku::register_haiku_driver_static();
+#ifdef HAIKU_AUDIO_ENABLED
 	audio_driver = memnew(AudioDriverHaiku);
 	AudioDriverManager::add_driver(audio_driver);
+#endif
 }
 
 void OS_Haiku::finalize() {
@@ -66,15 +72,7 @@ String OS_Haiku::get_cache_path() const {
 
 String OS_Haiku::get_system_dir(SystemDir p_dir, bool p_shared_storage) const {
 	directory_which which = B_USER_DIRECTORY;
-	switch (p_dir) {
-		case SYSTEM_DIR_DESKTOP: which = B_DESKTOP_DIRECTORY; break;
-		case SYSTEM_DIR_DOCUMENTS: which = B_USER_DIRECTORY; break;
-		case SYSTEM_DIR_DOWNLOADS: which = B_USER_DIRECTORY; break;
-		case SYSTEM_DIR_MUSIC: which = B_USER_DIRECTORY; break;
-		case SYSTEM_DIR_PICTURES: which = B_USER_DIRECTORY; break;
-		case SYSTEM_DIR_VIDEOS: which = B_USER_DIRECTORY; break;
-		default: which = B_USER_DIRECTORY; break;
-	}
+	if (p_dir == SYSTEM_DIR_DESKTOP) which = B_DESKTOP_DIRECTORY;
 	char path[B_PATH_NAME_LENGTH];
 	if (find_directory(which, -1, false, path, sizeof(path)) == B_OK) return String::utf8(path);
 	return String();
@@ -96,14 +94,22 @@ void OS_Haiku::alert(const String &p_alert, const String &p_title) {
 	print_line(p_title + ": " + p_alert);
 }
 
-void OS_Haiku::run() {
+void OS_Haiku::process_application_pulse() {
 	if (!main_loop) return;
-	main_loop->initialize();
 	bool quit = false;
-	while (!quit) {
-		DisplayServer *display = DisplayServer::get_singleton();
-		if (display) display->process_events();
-		if (main_loop->iteration(&quit)) quit = true;
-	}
+	DisplayServer *display = DisplayServer::get_singleton();
+	if (display) display->process_events();
+	if (main_loop->iteration(&quit) && application) application->request_quit();
+}
+
+void OS_Haiku::request_application_quit() {
+	if (application) application->request_quit();
+}
+
+void OS_Haiku::run() {
+	if (!main_loop || !application) return;
+	main_loop->initialize();
+	application->SetPulseRate(1000);
+	application->Run();
 	main_loop->finalize();
 }
