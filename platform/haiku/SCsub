@@ -1,0 +1,36 @@
+#!/usr/bin/env python
+
+Import("env")
+
+sources = [
+    "os_haiku.cpp",
+    "display_server_haiku.cpp",
+    "haiku_window.cpp",
+    "haiku_gl_view.cpp",
+    "gl_manager_haiku.cpp",
+]
+
+if env.get("HAIKU_AUDIO_ENABLED", False):
+    sources.append("audio_driver_haiku.cpp")
+
+objects = [env.Object("#platform/haiku/" + source) for source in sources]
+
+if env["library_type"] == "static":
+    objects.append(env.Object("#platform/haiku/libgodot_haiku.cpp"))
+elif env["library_type"] == "shared":
+    objects.append(env.Object("#platform/haiku/libgodot_haiku.cpp"))
+else:
+    objects.append(env.Object("#platform/haiku/godot_haiku.cpp"))
+
+if env.get("tools", False):
+    objects += [
+        env.Object("#platform/haiku/export/export_plugin.cpp"),
+        env.Object("#platform/haiku/export/export.cpp"),
+    ]
+
+if env["library_type"] == "static":
+    env.add_library("#bin/libgodot", objects)
+elif env["library_type"] == "shared":
+    env.add_shared_library("#bin/libgodot", objects)
+else:
+    env.add_program("#bin/godot", objects)

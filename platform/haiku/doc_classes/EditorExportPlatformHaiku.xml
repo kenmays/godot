@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="EditorExportPlatformHaiku" inherits="EditorExportPlatformPC" api_type="editor" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Exporter for Haiku OS desktop applications.
+	</brief_description>
+	<description>
+		The Haiku exporter produces Godot application packages and templates targeting the native Haiku platform.
+	</description>
+</class>
