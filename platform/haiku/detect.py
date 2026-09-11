@@ -7,7 +7,10 @@ def get_name():
 
 
 def can_build():
-    return sys.platform == "haiku" or os.uname().sysname.lower() == "haiku"
+    try:
+        return sys.platform == "haiku" or os.uname().sysname.lower() == "haiku"
+    except AttributeError:
+        return False
 
 
 def get_opts():
@@ -22,17 +25,26 @@ def get_flags():
     return {"supported": ["library", "editor"]}
 
 
+def get_doc_classes():
+    return ["EditorExportPlatformHaiku"]
+
+
+def get_doc_path():
+    return "doc_classes"
+
+
 def configure(env):
-    if env["arch"] == "x86_64":
+    arch = env["arch"]
+    if arch == "x86_64":
         env.Append(CCFLAGS=["-m64"])
         env.Append(LINKFLAGS=["-m64"])
-    elif env["arch"] == "x86_32":
+    elif arch == "x86_32":
         env.Append(CCFLAGS=["-m32"])
         env.Append(LINKFLAGS=["-m32"])
-    elif env["arch"] == "arm64":
-        pass
-    elif env["arch"] == "rv64":
+    elif arch == "rv64":
         env.Append(CCFLAGS=["-march=rv64gc"])
 
     env.Append(CPPDEFINES=["HAIKU_ENABLED", "UNIX_ENABLED", "OPENGL_ENABLED", "GLES3_ENABLED"])
     env.Append(LIBS=["be", "game", "interface", "media", "network", "translation", "GL"])
+    if env["use_haiku_audio"]:
+        env.Append(CPPDEFINES=["HAIKU_AUDIO_ENABLED"])
