@@ -10,13 +10,19 @@ sources = [
     "haiku_window.cpp",
     "haiku_gl_view.cpp",
     "gl_manager_haiku.cpp",
-    "audio_driver_haiku.cpp",
-    "crash_handler_haiku.cpp",
 ]
 
-objects = []
-for source in sources:
-    objects.append(env.Object("#platform/haiku/" + source))
+if env.get("HAIKU_AUDIO_ENABLED", False):
+    sources.append("audio_driver_haiku.cpp")
+
+objects = [env.Object("#platform/haiku/" + source) for source in sources]
+
+if env.get("tools", False):
+    export_sources = [
+        "export/export_plugin.cpp",
+        "export/export.cpp",
+    ]
+    objects += [env.Object("#platform/haiku/" + source) for source in export_sources]
 
 if env["library_type"] == "static":
     env.add_library("#bin/libgodot", objects)
